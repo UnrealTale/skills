@@ -1,16 +1,16 @@
 <!--
 ================================================================================
-MANDATORY LOCALIZATION RULE FOR THE AGENT:
-When presenting this Sandbox Security Briefing (or saving it to a Markdown report
-file), you MUST translate and write ALL section headings, table headers, field
-labels, policy explanations, capability descriptions, audit findings, and CLI
-usage comments in the EXACT LANGUAGE used by the user in their request!
-- If the user asked in Chinese (简体/繁体中文), write the entire report in Chinese.
-- If the user asked in English, write the entire report in English.
-- If the user asked in another language, write the entire report in that language.
-Keep only technical identifiers (CLI flags like `--ro-bind`, capability IDs like
-`gpu`, paths like `/dev/dri`, and status codes like `PASS`/`WARN`/`FAIL`) inside
-code backticks alongside localized descriptions.
+MANDATORY LOCALIZATION & FILE-WRITING RULE FOR THE AGENT:
+1. You MUST translate and write ALL section headings, table headers, field
+   labels, policy explanations, capability descriptions, audit findings, and CLI
+   usage comments in the EXACT LANGUAGE used by the user in their request!
+   - If the user asked in Chinese (简体/繁体中文), write the entire report in Chinese.
+   - If the user asked in English, write the entire report in English.
+   - If the user asked in another language, write the entire report in that language.
+2. You MUST save the rendered Markdown report to disk at `expected_report_file`
+   (by default `<output-script-stem>-briefing.md` in the same directory as the
+   generated script). Do NOT only output the report in chat without writing the
+   file to disk!
 ================================================================================
 -->
 
@@ -21,6 +21,7 @@ code backticks alongside localized descriptions.
 | :--- | :--- |
 | **[Localized: Application ID]** | `{{APP_ID}}` |
 | **[Localized: Generated Wrapper Script]** | `{{OUTPUT_SCRIPT}}` |
+| **[Localized: Security Briefing File]** | `{{EXPECTED_REPORT_FILE}}` |
 | **[Localized: Default Target Command]** | `{{DEFAULT_TARGET}}` |
 | **[Localized: Static Security & Portability Audit (`audit.py`)]** | **{{AUDIT_STATUS}}** ({{AUDIT_SUMMARY_LOCALIZED}}) |
 

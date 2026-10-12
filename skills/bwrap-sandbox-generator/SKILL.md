@@ -51,7 +51,7 @@ flowchart TD
     D -- "FAIL" --> E["Fix Forbidden Binds / Flags"] --> C
     D -- "PASS / WARN" --> F["4. Smoke Test Generated Script"]
     F --> G{"Works Properly?"}
-    G -- "Yes" --> H["6. Present Script & Localized Sandbox Security Briefing in User's Language"]
+    G -- "Yes" --> H["6. Write Localized Briefing File (<script-stem>-briefing.md) to Disk & Present to User"]
     G -- "No: Immediate Crash / CLI Error" --> I["5a. Auto Fallback: Run scripts/probe.py"]
     G -- "No: Silent GUI Failure Reported by User" --> J["5b. Interactive Fallback: Run '<script> --trace' & Analyze via scripts/probe.py"]
     I --> K["5c. MANDATORY USER APPROVAL GATE: Report Probed Paths & Risks to User for Explicit Selection"]
@@ -101,9 +101,10 @@ python3 /home/tale/workspace/playground/.agents/skills/bwrap-sandbox-generator/s
   --home-mode "<isolated|cwd|app-dir|custom|ephemeral>" \
   --cwd-mode "<none|ro|rw>" \
   --app-dir-mode "<ro|rw|none>" \
-  -o "<output-script-path>"
+  -o "<output-script-path>" \
+  --report "<output-briefing-path.md>"
 ```
-`generate.py` automatically runs `scripts/audit.py` before marking `<output-script-path>` executable.
+`generate.py` automatically runs `scripts/audit.py` before marking `<output-script-path>` executable, and returns `expected_report_file` (defaulting to `<output-script-stem>-briefing.md` alongside the generated script) and `briefing_data` in JSON.
 
 ### Step 4: Verify Execution (Smoke Test)
 Test-run the generated script (`<output-script-path> --help` or launch test). If it works, proceed to **Step 6**.
@@ -134,12 +135,12 @@ Never run `probe.py` before testing the static preset script first.
   3. **Require Explicit User Selection**: Ask the user which specific paths or capabilities they authorize binding into the sandbox so the user explicitly assumes the risk.
   4. **Re-Run `generate.py` with User-Approved Options Only** (`--add-cap`, `--ro-bind`, `--bind`, `--dev-bind`, `--bwrap-arg`, `--setenv`), which automatically re-runs `scripts/audit.py`.
 
-### Step 6: Output Standardized Sandbox Security Briefing IN THE USER'S LANGUAGE
-> **MANDATORY LANGUAGE MATCHING RULE**:
-> Read [`presets/base/report-template.md`](presets/base/report-template.md) and populate it using the `briefing_data` JSON returned by `generate.py`.
-> **You MUST write the entire Sandbox Security Briefing (all section titles, table headers, policy explanations, capability descriptions, audit findings, and CLI cheatsheet comments) in the EXACT language used by the user!**
-> - If the user asked in Simplified Chinese, the entire briefing MUST be written in Simplified Chinese (do NOT output English headings or English capability descriptions).
-> - If the user asked in English, write the briefing in English.
+### Step 6: Write Localized Sandbox Security Briefing File to Disk & Present to User (MANDATORY)
+> **CRITICAL REQUIREMENT — BOTH FILE CREATION AND USER-LANGUAGE LOCALIZATION ARE MANDATORY**:
+> 1. **Read Template & Data**: Read [`presets/base/report-template.md`](presets/base/report-template.md) and populate it using the `briefing_data` JSON returned by `generate.py`.
+> 2. **Localize into User's Language**: You **MUST** write the entire Sandbox Security Briefing (all section titles, table headers, policy explanations, capability descriptions, audit findings, and CLI cheatsheet comments) in the **EXACT language used by the user** (e.g., Simplified Chinese if the user asked in Chinese; English if the user asked in English).
+> 3. **Write Briefing File to Disk (`expected_report_file`)**: You **MUST** save the localized Markdown briefing to disk at the `expected_report_file` path returned by `generate.py` (by default `<output-script-stem>-briefing.md` in the same directory as the generated `.sh` script). **Never** only print the briefing in chat without writing the `.md` file to disk!
+> 4. **Link in Response**: Provide clickable links to both the generated sandbox script and the saved Sandbox Security Briefing `.md` file in your response to the user.
 
 ---
 

@@ -31,22 +31,41 @@ bwrap_setup_root_fs() {
     bwrap_ro_bind_try /dev/null /etc/gshadow
   fi
 
+  # Handle both UsrMerge distros (/lib -> usr/lib) and split-root distros
+  if [[ -L /bin || ! -d /bin ]]; then
+    BWRAP_CMD+=(--symlink usr/bin /bin)
+  else
+    bwrap_ro_bind_try /bin /bin
+  fi
+  if [[ -L /sbin || ! -d /sbin ]]; then
+    BWRAP_CMD+=(--symlink usr/sbin /sbin)
+  else
+    bwrap_ro_bind_try /sbin /sbin
+  fi
+  if [[ -L /lib || ! -d /lib ]]; then
+    BWRAP_CMD+=(--symlink usr/lib /lib)
+  else
+    bwrap_ro_bind_try /lib /lib
+  fi
+  if [[ -L /lib64 ]]; then
+    BWRAP_CMD+=(--symlink usr/lib64 /lib64)
+  elif [[ -d /lib64 ]]; then
+    bwrap_ro_bind_try /lib64 /lib64
+  elif [[ -d /usr/lib64 ]]; then
+    BWRAP_CMD+=(--symlink usr/lib64 /lib64)
+  fi
+  if [[ -L /lib32 ]]; then
+    BWRAP_CMD+=(--symlink usr/lib32 /lib32)
+  elif [[ -d /lib32 ]]; then
+    bwrap_ro_bind_try /lib32 /lib32
+  elif [[ -d /usr/lib32 ]]; then
+    BWRAP_CMD+=(--symlink usr/lib32 /lib32)
+  fi
+
   BWRAP_CMD+=(
-    --symlink /usr/bin /bin
-    --symlink /usr/lib /lib
-    --symlink /usr/lib64 /lib64
-    --symlink /usr/sbin /sbin
     --proc /proc
     --dev /dev
   )
-
-  # Cross-distro 32-bit and multiarch library support (Arch / Debian / Ubuntu / Fedora)
-  if [[ -d /usr/lib32 ]]; then
-    BWRAP_CMD+=(--symlink /usr/lib32 /lib32)
-  fi
-  bwrap_ro_bind_try /usr/lib/i386-linux-gnu /usr/lib/i386-linux-gnu
-  bwrap_ro_bind_try /usr/lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu
-  bwrap_ro_bind_try /lib/i386-linux-gnu /lib/i386-linux-gnu
 
   bwrap_ro_bind_try /opt /opt
 }

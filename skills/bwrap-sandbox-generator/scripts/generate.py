@@ -172,6 +172,9 @@ def assemble_script(
     sections.append(read_preset_file(base_cfg["entrypoint"]))
 
     # 4. Execution Pipeline Invocation
+    # Note: /tmp, /dev/shm, and runtime $HOME must be mounted BEFORE capability
+    # presets so capability submounts (e.g. /tmp/.X11-unix, $HOME/.Xauthority,
+    # $HOME/.local/share/fonts, $HOME/.config/MangoHud) are mounted on top of them.
     call_lines: List[str] = [
         "",
         "# ==============================================================================",
@@ -180,6 +183,8 @@ def assemble_script(
         'bwrap_parse_cli_args "$@"',
         "bwrap_init_base",
         "bwrap_setup_root_fs",
+        "BWRAP_CMD+=(--tmpfs /tmp --tmpfs /dev/shm)",
+        f'{runtime_meta["function"]} "${{REMAINING_ARGS[@]}}"',
         caps_cfg["network"]["function"],
     ]
 
@@ -187,13 +192,6 @@ def assemble_script(
         if cap_id == "network":
             continue
         call_lines.append(caps_cfg[cap_id]["function"])
-
-    call_lines.extend(
-        [
-            "BWRAP_CMD+=(--tmpfs /tmp --tmpfs /dev/shm)",
-            f'{runtime_meta["function"]} "${{REMAINING_ARGS[@]}}"',
-        ]
-    )
 
     has_extras = any(
         [
@@ -295,6 +293,7 @@ def main() -> None:
     parser.add_argument("--unsetenv", action="append", default=[], help="Unset environment variable inside sandbox")
     parser.add_argument("--bwrap-arg", action="append", default=[], help="Extra raw bwrap flag/argument")
     parser.add_argument("-o", "--output", help="Output Bash script path")
+    parser.add_argument("--report", help="Target file path where the Agent must write the localized Markdown Sandbox Security Briefing (defaults to <output-stem>-briefing.md)")
 
     args = parser.parse_args()
     catalog_path = Path(args.catalog)
@@ -345,6 +344,7 @@ def main() -> None:
         extra_unsetenv = cfg.get("extra_unsetenv", args.unsetenv)
         extra_bwrap_args = cfg.get("extra_bwrap_args", args.bwrap_arg)
         output_path = cfg.get("output", args.output)
+        report_path = cfg.get("report", args.report)
     else:
         if not args.runtime or not args.category or not args.output:
             parser.error("--runtime, --category, and -o/--output are required (or use --list / --config-json).")
@@ -386,6 +386,7 @@ def main() -> None:
         extra_unsetenv = args.unsetenv
         extra_bwrap_args = args.bwrap_arg
         output_path = args.output
+        report_path = args.report
 
     cat_meta = catalog["categories"][category_id]
     resolved_net = bool(cat_meta.get("default_net", False)) or ("network" in caps) if default_net is None else default_net
@@ -468,21 +469,24 @@ def main() -> None:
     os.chmod(out_file, 0o755)
 
     template_rel_path = catalog["base_presets"].get("report_template", "presets/base/report-template.md")
+    expected_report = Path(report_path) if report_path else out_file.with_name(f"{out_file.stem}-briefing.md")
     print(
         json.dumps(
             {
                 "status": "ok",
                 "output_script": os.path.abspath(out_file),
+                "expected_report_file": os.path.abspath(expected_report),
                 "report_template_path": os.path.abspath(SKILL_ROOT / template_rel_path),
                 "localization_notice": (
-                    "MANDATORY: Read `report_template_path` and render the final Sandbox Security Briefing "
-                    "in the EXACT language used by the user in their prompt (e.g., Simplified Chinese if the user "
-                    "asked in Chinese; English if the user asked in English). Do NOT output an English report if "
-                    "the user communicated in another language!"
+                    "MANDATORY ACTION REQUIRED: (1) Read `report_template_path`, (2) render the complete "
+                    "Sandbox Security Briefing in the EXACT language used by the user in their prompt "
+                    "(e.g., Simplified Chinese if the user asked in Chinese; English if the user asked in English), "
+                    "AND (3) WRITE the localized Markdown report to disk at `expected_report_file` before finishing!"
                 ),
                 "briefing_data": {
                     "app_id": app_id,
-                    "output_script": str(out_file.resolve()),
+                    "output_script": os.path.abspath(out_file),
+                    "expected_report_file": os.path.abspath(expected_report),
                     "default_target": default_target or [],
                     "layer1_runtime": {
                         "id": runtime_id,
