@@ -1,0 +1,6 @@
+#!/bin/sh
+# Launcher script for ${PACKAGE_NAME}
+set -e
+
+APP_DIR="/opt/${PACKAGE_NAME}"
+exec "${APP_DIR}/${BINARY_NAME}" "$@"

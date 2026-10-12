@@ -1,0 +1,7 @@
+abi <abi/4.0>,
+include <tunables/global>
+
+profile ${PACKAGE_NAME} /opt/${PACKAGE_NAME}/** flags=(unconfined) {
+  userns,
+  include if exists <local/${PACKAGE_NAME}>
+}

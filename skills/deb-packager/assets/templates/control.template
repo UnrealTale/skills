@@ -1,0 +1,11 @@
+Package: ${PACKAGE_NAME}
+Version: ${VERSION}
+Section: ${SECTION}
+Priority: optional
+Architecture: ${ARCHITECTURE}
+Installed-Size: ${INSTALLED_SIZE}
+Maintainer: ${MAINTAINER}
+Homepage: ${HOMEPAGE}
+Depends: ${DEPENDS}
+Description: ${SUMMARY}
+ ${LONG_DESCRIPTION}

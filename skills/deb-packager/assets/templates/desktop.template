@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=${DISPLAY_NAME}
+Comment=${COMMENT}
+Exec=${EXEC_PATH} %U
+Icon=${ICON_NAME}
+Terminal=${TERMINAL}
+Type=Application
+Categories=${CATEGORIES}
+StartupNotify=true
+StartupWMClass=${WM_CLASS}

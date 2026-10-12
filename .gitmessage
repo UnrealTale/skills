@@ -1,0 +1,11 @@
+# <type>: <short summary in imperative mood>
+#
+# Types:
+#   feat     - New feature or functionality
+#   fix      - Bug fix or error resolution
+#   refactor - Code restructuring, optimization, or style changes
+#   chore    - Docs, config, dependencies, tests, or maintenance
+#   wip      - Work in progress (temporary checkpoint)
+#
+# Details (optional, focus on WHY rather than WHAT):
+# -

@@ -1,0 +1,41 @@
+{
+  "skill_name": "deb-packager",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I have a shell script utility at `deb-packager/evals/files/sys-cleanup.sh`. Please package it into a Debian .deb package named `sys-cleanup` with version `1.0.0`. It depends on bash and coreutils. When installed, users should be able to run `sys-cleanup` directly from terminal.",
+      "expected_output": "A valid sys-cleanup_1.0.0_all.deb package with correct DEBIAN/control, proper dependencies, an executable /usr/bin/sys-cleanup launcher, and no unwanted GUI .desktop file.",
+      "files": ["evals/files/sys-cleanup.sh"],
+      "expectations": [
+        "Produces a valid Debian package named sys-cleanup_1.0.0_all.deb",
+        "DEBIAN/control specifies Package: sys-cleanup, Version: 1.0.0, Architecture: all, and Depends containing bash and coreutils",
+        "Contains /usr/bin/sys-cleanup with executable permissions (-rwxr-xr-x) and root/root ownership",
+        "Does NOT pollute /usr/share/applications/ with a .desktop file for this CLI utility"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "I have a Python project at `deb-packager/evals/files/weather_cli`. Package it into a Debian .deb package named `weather-cli` version `1.2.0`. Use an isolated virtualenv installed to /opt/weather-cli/venv and provide a terminal launcher at /usr/bin/weather-cli.",
+      "expected_output": "A valid weather-cli_1.2.0_<arch>.deb package bundling a relocated /opt/weather-cli/venv virtual environment and /usr/bin/weather-cli entrypoint wrapper, plus a reusable weather-cli.recipe.json recording prepare_cmd and runtime_cmd.",
+      "files": ["evals/files/weather_cli/main.py", "evals/files/weather_cli/requirements.txt"],
+      "expectations": [
+        "Produces a valid Debian package for weather-cli version 1.2.0",
+        "Bundles the isolated virtual environment under /opt/weather-cli/venv/",
+        "Scripts inside /opt/weather-cli/venv/bin/ have relocated shebangs pointing to /opt/weather-cli/venv/bin/python3 instead of temporary build paths",
+        "Saves prepare_cmd, runtime_cmd, and entrypoint into weather-cli.recipe.json for future reuse"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "I have a Node.js CLI application at `deb-packager/evals/files/node_hello`. Package it into a .deb package named `node-hello` version `2.0.0` using the runtime category, declaring `nodejs` as its dependency and generating a launcher wrapper in `/usr/bin/node-hello`.",
+      "expected_output": "A valid node-hello_2.0.0_all.deb package containing /opt/node-hello/index.js, nodejs dependency in control, and an executable wrapper in /usr/bin/node-hello.",
+      "files": ["evals/files/node_hello/package.json", "evals/files/node_hello/index.js"],
+      "expectations": [
+        "Produces a valid Debian package named node-hello_2.0.0_all.deb with Architecture: all",
+        "Installs the payload to /opt/node-hello/index.js",
+        "DEBIAN/control declares nodejs in Depends",
+        "Provides an executable wrapper script at /usr/bin/node-hello invoking node /opt/node-hello/index.js"
+      ]
+    }
+  ]
+}
