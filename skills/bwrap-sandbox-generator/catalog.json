@@ -1,0 +1,323 @@
+{
+  "schema_version": "2.0",
+  "standard_reference": "Freedesktop.org Desktop Menu Specification v1.1 (Main & Additional Categories) + POSIX CLI Taxonomy",
+  "base_presets": {
+    "helpers": "presets/base/helpers.sh",
+    "core": "presets/base/core.sh",
+    "entrypoint": "presets/base/entrypoint.sh",
+    "report_template": "presets/base/report-template.md"
+  },
+  "runtimes": {
+    "native-elf": {
+      "file": "presets/runtimes/native-elf.sh",
+      "function": "bwrap_configure_runtime",
+      "description": "Native Linux ELF binaries (C/C++/Rust/Go/Unity/Godot/GTK/Qt) with isolated persistent sandbox HOME and automatic application directory mounting"
+    },
+    "appimage": {
+      "file": "presets/runtimes/appimage.sh",
+      "function": "bwrap_configure_runtime",
+      "description": "AppImage single-file bundles; sets APPIMAGE_EXTRACT_AND_RUN=1 for FUSE-less execution and read-only binds the AppImage payload"
+    },
+    "electron": {
+      "file": "presets/runtimes/electron.sh",
+      "function": "bwrap_configure_runtime",
+      "description": "Electron / Chromium / CEF / NW.js applications; sets ELECTRON_DISABLE_SANDBOX=1 so outer bwrap handles namespace isolation without nested sandbox conflicts"
+    },
+    "wine": {
+      "file": "presets/runtimes/wine.sh",
+      "function": "bwrap_configure_runtime",
+      "description": "Windows .exe executables and Wine/Proton/UMU runners; isolates host HOME via tmpfs and mounts WINEPREFIX and translation layer caches"
+    },
+    "interpreted": {
+      "file": "presets/runtimes/interpreted.sh",
+      "function": "bwrap_configure_runtime",
+      "description": "Interpreted and VM applications (Python / Java -jar / Shell / Node.js / Love2D); penetrates interpreter arguments to resolve and mount the target script directory"
+    }
+  },
+  "capabilities": {
+    "network": {
+      "file": "presets/capabilities/network.sh",
+      "function": "bwrap_setup_network",
+      "toggle_var": "ALLOW_NET",
+      "description": "Network namespace sharing, DNS resolution (systemd-resolved/NetworkManager), and cross-distro CA root certificates",
+      "required_audit_tokens": ["--share-net", "/etc/resolv.conf", "/etc/ssl"]
+    },
+    "display": {
+      "file": "presets/capabilities/display.sh",
+      "function": "bwrap_setup_display",
+      "toggle_var": "ENABLE_DISPLAY",
+      "description": "Video display output passthrough supporting both Wayland and X11/XWayland protocols",
+      "required_audit_tokens": ["WAYLAND_DISPLAY", "/tmp/.X11-unix/X"]
+    },
+    "gpu": {
+      "file": "presets/capabilities/gpu.sh",
+      "function": "bwrap_setup_gpu",
+      "toggle_var": "ENABLE_GPU",
+      "description": "Cross-vendor hardware GPU acceleration covering AMD (/dev/kfd, /dev/dri), Intel (/dev/dri), NVIDIA (proprietary/open device nodes & libraries), and Vulkan/OpenCL ICDs",
+      "required_audit_tokens": ["/dev/dri", "/dev/kfd", "/dev/nvidia0", "/dev/nvidiactl", "/usr/share/vulkan", "/etc/vulkan"]
+    },
+    "audio": {
+      "file": "presets/capabilities/audio.sh",
+      "function": "bwrap_setup_audio",
+      "toggle_var": "ENABLE_AUDIO",
+      "description": "Cross-backend audio output (speakers) and audio input (microphone) across PipeWire, PulseAudio, and ALSA",
+      "required_audit_tokens": ["pipewire-0", "pulse", "/dev/snd"]
+    },
+    "input": {
+      "file": "presets/capabilities/input.sh",
+      "function": "bwrap_setup_input",
+      "toggle_var": "ENABLE_INPUT",
+      "description": "Input peripherals and game controllers (/dev/input, /dev/uinput, /dev/hidraw*), /run/udev device enumeration, and /dev/ntsync fast synchronization primitive",
+      "required_audit_tokens": ["/dev/input", "/dev/hidraw", "/run/udev", "/dev/ntsync"]
+    },
+    "camera": {
+      "file": "presets/capabilities/camera.sh",
+      "function": "bwrap_setup_camera",
+      "toggle_var": "ENABLE_CAMERA",
+      "description": "Webcams and video capture devices via V4L2 and Media Controller (/dev/video*, /dev/media*, /dev/v4l*, /run/udev)",
+      "required_audit_tokens": ["/dev/video", "/dev/media", "/run/udev"]
+    },
+    "usb_serial": {
+      "file": "presets/capabilities/usb_serial.sh",
+      "function": "bwrap_setup_usb_serial",
+      "toggle_var": "ENABLE_USB_SERIAL",
+      "description": "Raw USB bus (/dev/bus/usb), serial ports (/dev/ttyUSB*, /dev/ttyACM*), and HID hardware debugging passthrough",
+      "required_audit_tokens": ["/dev/bus/usb", "/dev/ttyUSB", "/dev/ttyACM"]
+    },
+    "bluetooth": {
+      "file": "presets/capabilities/bluetooth.sh",
+      "function": "bwrap_setup_bluetooth",
+      "toggle_var": "ENABLE_BLUETOOTH",
+      "description": "Bluetooth controller state and BlueZ system bus communication (/dev/rfkill, /sys/class/bluetooth, system_bus_socket)",
+      "required_audit_tokens": ["/dev/rfkill", "/sys/class/bluetooth"]
+    },
+    "printing": {
+      "file": "presets/capabilities/printing.sh",
+      "function": "bwrap_setup_printing",
+      "toggle_var": "ENABLE_PRINTING",
+      "description": "CUPS local and network printing service socket (/run/cups/cups.sock, /etc/cups)",
+      "required_audit_tokens": ["/run/cups/cups.sock", "/etc/cups"]
+    },
+    "optical_storage": {
+      "file": "presets/capabilities/optical_storage.sh",
+      "function": "bwrap_setup_optical_storage",
+      "toggle_var": "ENABLE_OPTICAL",
+      "description": "Optical disc drives and CD/DVD/BD media devices (/dev/sr*, /dev/sg*, /run/udev)",
+      "required_audit_tokens": ["/dev/sr", "/dev/sg"]
+    },
+    "virtualization_kvm": {
+      "file": "presets/capabilities/virtualization_kvm.sh",
+      "function": "bwrap_setup_kvm",
+      "toggle_var": "ENABLE_KVM",
+      "description": "KVM hardware virtualization and virtual networking acceleration (/dev/kvm, /dev/vhost-net, /dev/vhost-vsock)",
+      "required_audit_tokens": ["/dev/kvm", "/dev/vhost-net"]
+    },
+    "fonts_theme": {
+      "file": "presets/capabilities/fonts_theme.sh",
+      "function": "bwrap_setup_fonts_and_theme",
+      "toggle_var": "ENABLE_FONTS_THEME",
+      "description": "Cross-distro system and user fonts, Fontconfig caches, icon themes, and GTK/Qt theme resources",
+      "required_audit_tokens": ["/usr/share/fonts", "/etc/fonts", "/usr/share/icons"]
+    },
+    "hud": {
+      "file": "presets/capabilities/hud.sh",
+      "function": "bwrap_setup_hud",
+      "toggle_var": "ENABLE_HUD",
+      "description": "Gaming performance overlays and optimizers (GameMode, MangoHud, vkBasalt)",
+      "required_audit_tokens": ["gamemode", "MangoHud", "vkBasalt"]
+    },
+    "dbus": {
+      "file": "presets/capabilities/dbus.sh",
+      "function": "bwrap_setup_dbus",
+      "toggle_var": "ENABLE_DBUS",
+      "description": "Desktop D-Bus session bus communication (file chooser portals, desktop notifications, screen sharing)",
+      "required_audit_tokens": ["DBUS_SESSION_BUS_ADDRESS"]
+    }
+  },
+  "categories": {
+    "game": {
+      "freedesktop_categories": ["Game", "ActionGame", "AdventureGame", "ArcadeGame", "BoardGame", "BlocksGame", "CardGame", "LogicGame", "RolePlaying", "Shooter", "Simulation", "SportsGame", "StrategyGame"],
+      "capabilities": ["display", "gpu", "audio", "input", "fonts_theme", "hud"],
+      "default_net": false,
+      "default_cwd": false,
+      "new_session": true,
+      "description": "Single-player / offline games (video output, cross-vendor GPU/Vulkan, audio, gamepads/udev/ntsync, fonts & HUD; network disabled by default)"
+    },
+    "game-online": {
+      "freedesktop_categories": ["Game", "RolePlaying", "Shooter", "SportsGame", "StrategyGame"],
+      "capabilities": ["network", "display", "gpu", "audio", "input", "fonts_theme", "hud"],
+      "default_net": true,
+      "default_cwd": false,
+      "new_session": true,
+      "description": "Multiplayer / online games and gaming platforms (game capabilities plus network & CA certificates enabled by default)"
+    },
+    "emulator": {
+      "freedesktop_categories": ["Game", "System", "Emulator"],
+      "capabilities": ["display", "gpu", "audio", "input", "usb_serial", "optical_storage", "fonts_theme", "hud"],
+      "default_net": false,
+      "default_cwd": false,
+      "new_session": true,
+      "description": "Console, handheld, and arcade emulators (RPCS3/Yuzu/Dolphin/RetroArch/PCSX2; includes gamepads, USB peripherals, and optical drive passthrough)"
+    },
+    "web-browser": {
+      "freedesktop_categories": ["Network", "WebBrowser"],
+      "capabilities": ["network", "display", "gpu", "audio", "camera", "fonts_theme", "dbus", "printing"],
+      "default_net": true,
+      "default_cwd": false,
+      "new_session": true,
+      "description": "Web browsers (Firefox/Chromium/Brave; includes network, GPU acceleration, audio/video, WebRTC camera, D-Bus portals, and printing)"
+    },
+    "instant-messaging": {
+      "freedesktop_categories": ["Network", "InstantMessaging", "Chat", "IRCClient"],
+      "capabilities": ["network", "display", "gpu", "audio", "camera", "fonts_theme", "dbus"],
+      "default_net": true,
+      "default_cwd": false,
+      "new_session": true,
+      "description": "Instant messaging and chat clients (Telegram/Discord/Signal/WeChat/QQ/Element; supports voice/video calls and notifications)"
+    },
+    "video-conference": {
+      "freedesktop_categories": ["Network", "VideoConference", "Telephony"],
+      "capabilities": ["network", "display", "gpu", "audio", "camera", "fonts_theme", "dbus"],
+      "default_net": true,
+      "default_cwd": false,
+      "new_session": true,
+      "description": "Video conferencing and VoIP clients (Zoom/Teams/Webex/Jitsi; includes webcam input, microphone/speaker audio, GPU codec acceleration, and screen sharing)"
+    },
+    "email-client": {
+      "freedesktop_categories": ["Network", "Office", "Email", "ContactManagement", "Calendar", "News", "Feed"],
+      "capabilities": ["network", "display", "gpu", "audio", "fonts_theme", "dbus", "printing"],
+      "default_net": true,
+      "default_cwd": false,
+      "new_session": true,
+      "description": "Email clients, calendars, and RSS feed readers (Thunderbird/Evolution/Geary)"
+    },
+    "file-transfer": {
+      "freedesktop_categories": ["Network", "FileTransfer", "P2P"],
+      "capabilities": ["network", "display", "gpu", "fonts_theme", "dbus"],
+      "default_net": true,
+      "default_cwd": false,
+      "new_session": true,
+      "description": "File transfer, FTP, BitTorrent/P2P downloaders, and cloud sync clients (qBittorrent/Transmission/FileZilla/Nextcloud)"
+    },
+    "remote-access": {
+      "freedesktop_categories": ["Network", "RemoteAccess"],
+      "capabilities": ["network", "display", "gpu", "audio", "input", "usb_serial", "fonts_theme", "dbus"],
+      "default_net": true,
+      "default_cwd": false,
+      "new_session": true,
+      "description": "Remote desktop and game streaming clients (Remmina/RustDesk/Parsec/Moonlight/AnyDesk)"
+    },
+    "media-player": {
+      "freedesktop_categories": ["AudioVideo", "Audio", "Video", "Player", "TV"],
+      "capabilities": ["display", "gpu", "audio", "optical_storage", "fonts_theme", "dbus"],
+      "default_net": false,
+      "default_cwd": false,
+      "new_session": true,
+      "description": "Local audio/video media players (MPV/VLC/Celluloid/Elisa; includes hardware video decoding, audio, and optical disc playback)"
+    },
+    "media-production": {
+      "freedesktop_categories": ["AudioVideo", "AudioVideoEditing", "Recorder", "Midi", "Mixer", "Sequencer", "DiscBurning"],
+      "capabilities": ["display", "gpu", "audio", "camera", "input", "usb_serial", "optical_storage", "fonts_theme", "dbus"],
+      "default_net": false,
+      "default_cwd": false,
+      "new_session": true,
+      "description": "Audio/video editing, live streaming, recording, and Digital Audio Workstations (OBS Studio/Kdenlive/Audacity/Ardour/Reaper)"
+    },
+    "graphics-2d": {
+      "freedesktop_categories": ["Graphics", "2DGraphics", "RasterGraphics", "VectorGraphics", "Photography", "Viewer"],
+      "capabilities": ["display", "gpu", "input", "fonts_theme", "dbus", "printing"],
+      "default_net": false,
+      "default_cwd": false,
+      "new_session": true,
+      "description": "2D image editing, vector illustration, digital painting, and RAW photography (GIMP/Krita/Inkscape/Darktable; includes drawing tablet input and printing)"
+    },
+    "graphics-3d": {
+      "freedesktop_categories": ["Graphics", "3DGraphics"],
+      "capabilities": ["display", "gpu", "audio", "input", "fonts_theme", "dbus"],
+      "default_net": false,
+      "default_cwd": false,
+      "new_session": true,
+      "description": "3D modeling, animation rendering, and CAD design (Blender/FreeCAD/OpenSCAD/MeshLab; includes OpenGL/Vulkan/CUDA/ROCm compute acceleration)"
+    },
+    "office-publishing": {
+      "freedesktop_categories": ["Office", "WordProcessor", "Spreadsheet", "Presentation", "Publishing", "Chart", "Finance", "ProjectManagement"],
+      "capabilities": ["display", "gpu", "fonts_theme", "dbus", "printing"],
+      "default_net": false,
+      "default_cwd": false,
+      "new_session": true,
+      "description": "Office suites, spreadsheets, PDF viewers, and desktop publishing (LibreOffice/OnlyOffice/Okular/Evince/Scribus)"
+    },
+    "scanning-ocr": {
+      "freedesktop_categories": ["Graphics", "Office", "Scanning", "OCR"],
+      "capabilities": ["display", "gpu", "camera", "usb_serial", "printing", "fonts_theme", "dbus"],
+      "default_net": false,
+      "default_cwd": false,
+      "new_session": true,
+      "description": "Document scanning and OCR software (Simple Scan/Skanlite/Xsane/gscan2pdf; includes USB scanner passthrough)"
+    },
+    "ide-development": {
+      "freedesktop_categories": ["Development", "IDE", "GUIDesigner", "Debugger", "Profiling", "RevisionControl", "WebDevelopment"],
+      "capabilities": ["network", "display", "gpu", "fonts_theme", "dbus"],
+      "default_net": true,
+      "default_cwd": true,
+      "new_session": true,
+      "description": "Graphical IDEs and code editors (VSCode/JetBrains/QtCreator/DBeaver)"
+    },
+    "science-ai": {
+      "freedesktop_categories": ["Science", "Education", "Math", "Physics", "Chemistry", "Astronomy", "ArtificialIntelligence", "DataVisualization"],
+      "capabilities": ["display", "gpu", "audio", "fonts_theme"],
+      "default_net": false,
+      "default_cwd": false,
+      "new_session": true,
+      "description": "Scientific computing, simulation, and local LLM/AI inference clients (LM Studio/GPT4All/Octave/Stellarium/QGIS)"
+    },
+    "hardware-embedded": {
+      "freedesktop_categories": ["Development", "System", "HardwareSettings", "Electronics", "Robotics"],
+      "capabilities": ["display", "gpu", "usb_serial", "bluetooth", "fonts_theme", "dbus"],
+      "default_net": false,
+      "default_cwd": false,
+      "new_session": true,
+      "description": "Embedded development, firmware flashing, logic analyzers, and Bluetooth/USB hardware configuration tools (Arduino/STM32Cube/PulseView/OpenOCD)"
+    },
+    "virtualization": {
+      "freedesktop_categories": ["System", "Virtualization"],
+      "capabilities": ["network", "display", "gpu", "audio", "input", "usb_serial", "optical_storage", "virtualization_kvm", "fonts_theme", "dbus"],
+      "default_net": true,
+      "default_cwd": false,
+      "new_session": true,
+      "description": "Desktop virtual machine and hypervisor managers (QEMU/KVM/GNOME Boxes/virt-manager; supports /dev/kvm hardware virtualization)"
+    },
+    "desktop-utility": {
+      "freedesktop_categories": ["Utility", "Calculator", "Clock", "TextEditor", "Archiving", "Compression", "FileTools", "Security", "Accessibility"],
+      "capabilities": ["display", "gpu", "fonts_theme", "dbus"],
+      "default_net": false,
+      "default_cwd": false,
+      "new_session": true,
+      "description": "General desktop utilities, local knowledge bases, password managers, dictionaries, and archive tools (Obsidian/Logseq/KeePassXC/GoldenDict/Ark)"
+    },
+    "cli-pure": {
+      "freedesktop_categories": ["ConsoleOnly", "Utility"],
+      "capabilities": [],
+      "default_net": false,
+      "default_cwd": false,
+      "new_session": false,
+      "description": "Stateless pure command-line utilities (core read-only system rootfs only; no network, no GUI, no implicit $PWD exposure)"
+    },
+    "cli-workspace": {
+      "freedesktop_categories": ["ConsoleOnly", "Development", "Building"],
+      "capabilities": [],
+      "default_net": false,
+      "default_cwd": true,
+      "new_session": false,
+      "description": "Workspace build, compilation, and code analysis CLI tools (mounts $PWD by default, isolates host $HOME, network disabled by default)"
+    },
+    "cli-network": {
+      "freedesktop_categories": ["ConsoleOnly", "Network"],
+      "capabilities": ["network"],
+      "default_net": true,
+      "default_cwd": false,
+      "new_session": false,
+      "description": "Networked CLI downloaders and API clients (curl/yt-dlp/aria2; enables network and CA certificates)"
+    }
+  }
+}
