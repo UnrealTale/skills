@@ -136,8 +136,8 @@ bwrap_init_app_context() {
   # 1. Resolve canonical executable/file path
   local app_exe=""
   if [[ -n "$app_target" ]]; then
-    if [[ -e "$app_target" ]]; then
-      app_exe="$(realpath "$app_target")"
+    if [[ -e "$app_target" || -L "$app_target" ]]; then
+      app_exe="$(realpath -s "$app_target")"
     elif [[ "$app_target" != -* ]] && command -v -- "$app_target" >/dev/null 2>&1; then
       app_exe="$(realpath "$(command -v -- "$app_target")")"
     else
@@ -151,7 +151,7 @@ bwrap_init_app_context() {
   if [[ -n "$manual_app_dir" ]]; then
     manual_app_dir="${manual_app_dir/#\~/$HOME}"
     app_dir="$(realpath -m "$manual_app_dir")"
-  elif [[ -n "$app_exe" && -e "$app_exe" ]]; then
+  elif [[ -n "$app_exe" && ( -e "$app_exe" || -L "$app_exe" ) ]]; then
     if [[ -d "$app_exe" ]]; then
       app_dir="$app_exe"
     else
@@ -227,7 +227,7 @@ bwrap_init_app_context() {
     elif [[ "$app_dir_mode" == "ro" ]]; then
       bwrap_ro_bind_try "$app_dir" "$app_dir"
     fi
-  elif [[ -n "$app_exe" && -f "$app_exe" ]]; then
+  elif [[ -n "$app_exe" && ( -f "$app_exe" || -L "$app_exe" ) ]]; then
     bwrap_ro_bind_try "$app_exe" "$app_exe"
   fi
 

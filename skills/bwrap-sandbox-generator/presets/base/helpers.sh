@@ -25,8 +25,8 @@ bwrap_mount_spec() {
   src="${src/#\~/$HOME}"
   dst="${dst/#\~/$HOME}"
 
-  # Graceful degradation if source path does not exist on host
-  if [[ ! -e "$src" ]]; then
+  # Graceful degradation if source path does not exist on host (supports symlinks intended for container resolution)
+  if [[ ! -e "$src" && ! -L "$src" ]]; then
     echo "[bwrap-sandbox] Warning: Mount source '${src}' does not exist on host; skipping." >&2
     return 0
   fi
@@ -72,7 +72,7 @@ bwrap_ro_bind() {
 bwrap_bind_try() {
   local src="$1"
   local dst="${2:-$1}"
-  if [[ -e "$src" ]]; then
+  if [[ -e "$src" || -L "$src" ]]; then
     BWRAP_CMD+=(--bind-try "$src" "$dst")
   fi
 }
@@ -80,7 +80,7 @@ bwrap_bind_try() {
 bwrap_ro_bind_try() {
   local src="$1"
   local dst="${2:-$1}"
-  if [[ -e "$src" ]]; then
+  if [[ -e "$src" || -L "$src" ]]; then
     # When masking a file with /dev/null (e.g. /etc/shadow), only mount if target exists
     if [[ "$src" == "/dev/null" && ! -e "$dst" ]]; then
       return 0
@@ -92,7 +92,7 @@ bwrap_ro_bind_try() {
 bwrap_dev_bind_try() {
   local src="$1"
   local dst="${2:-$1}"
-  if [[ -e "$src" ]]; then
+  if [[ -e "$src" || -L "$src" ]]; then
     BWRAP_CMD+=(--dev-bind-try "$src" "$dst")
   fi
 }

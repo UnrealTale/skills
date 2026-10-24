@@ -77,7 +77,7 @@ bwrap_parse_cli_args() {
 
     # Arguments starting with '-' are option flags, never a new executable command
     if [[ "$first_arg" != -* ]]; then
-      if [[ -x "$first_arg" && ! -d "$first_arg" ]]; then
+      if [[ ( -x "$first_arg" || -L "$first_arg" ) && ! -d "$first_arg" ]]; then
         is_executable=true
       elif [[ "$first_arg" != *"/"* ]] && command -v -- "$first_arg" >/dev/null 2>&1; then
         is_executable=true
