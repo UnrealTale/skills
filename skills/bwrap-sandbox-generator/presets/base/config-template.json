@@ -1,0 +1,170 @@
+{
+  // ==============================================================================
+  // Bubblewrap (bwrap) Sandbox Configuration Template
+  // ==============================================================================
+  // Usage:
+  //   1. Pass a JSON/JSONC configuration file directly:
+  //      python3 scripts/generate.py config.json [-o output.sh]
+  //   2. Pass via standard input (stdin) pipe:
+  //      cat config.json | python3 scripts/generate.py - [-o output.sh]
+  //   3. Inline JSON string invocation (recommended for AI Agents and CLI automation):
+  //      python3 scripts/generate.py --json '{"runtime": "native-elf", "category": "game", "output": "./game.sh"}'
+  //   4. Print this documented template to stdout:
+  //      python3 scripts/generate.py --print-template
+  // ==============================================================================
+
+  // ----------------------------------------------------------------------------
+  // 1. Core & Software Classification (Required)
+  // ----------------------------------------------------------------------------
+
+  // runtime (string, required): Execution environment preset (Layer 1)
+  // Available choices:
+  //   - "native-elf"  : Native Linux ELF binaries (C/C++/Rust/Go/GTK/Qt/Godot/Unity, etc.)
+  //   - "appimage"    : AppImage bundled packages (handles FUSE mounting and /tmp/.mount_* extraction)
+  //   - "electron"    : Chromium/Electron applications (isolates GPU cache and flags sandbox conflicts)
+  //   - "interpreted" : Script-interpreted programs (Python, Node.js, Bash, Ruby, Perl, etc.)
+  //   - "wine"        : Windows application compatibility layer (manages WINEPREFIX and drive bindings)
+  "runtime": "native-elf",
+
+  // category (string, required): Application category preset (Layer 2, aligned with Freedesktop.org spec)
+  // Available choices:
+  //   "game", "game-online", "emulator", "web-browser", "instant-messaging",
+  //   "video-conference", "email-client", "file-transfer", "remote-access",
+  //   "media-player", "media-production", "graphics-2d", "graphics-3d",
+  //   "office-publishing", "scanning-ocr", "ide-development", "science-ai",
+  //   "hardware-embedded", "virtualization", "desktop-utility",
+  //   "cli-pure", "cli-workspace", "cli-network"
+  "category": "desktop-utility",
+
+  // app_id (string): Unique application identifier determining the isolated sandbox HOME directory name.
+  // Default: "sandbox-app". When set to a specific name (e.g. "telegram"), HOME maps to ~/.local/share/bwrap-sandbox/telegram.
+  // If left as "sandbox-app", it can be dynamically overridden at runtime using `-i <custom-id>`.
+  "app_id": "sandbox-app",
+
+  // target (array of strings): Default target command and startup arguments.
+  // Dedicated app mode: ["/opt/my-app/app-bin", "--flag1", "arg2"]
+  // Generic runner mode: Leave empty []. Pass the target command when executing the generated script.
+  "target": [],
+
+  // output (string, required): Destination path for the generated executable Bash sandbox script (e.g. "./my-app.sh")
+  "output": "",
+
+  // report (string, optional): Target destination for the security briefing Markdown report.
+  // If left empty, automatically defaults to "<output-stem>-briefing.md" in the output script's directory.
+  "report": "",
+
+  // ----------------------------------------------------------------------------
+  // 2. Security & Isolation Policies
+  // ----------------------------------------------------------------------------
+
+  // default_net (boolean | null): Whether to permit network access by default.
+  //   null : Inherit from category default (e.g., browser/im default to true; game/utility default to false)
+  //   true : Force enable host network access
+  //   false: Force disable network access (creates an isolated, unconfigured network namespace with --unshare-net)
+  "default_net": null,
+
+  // home_mode (string | null): Sandbox $HOME directory mapping policy.
+  //   null        : Automatic inference (GUI/general apps default to "isolated", pure CLI tools default to "ephemeral")
+  //   "isolated"  : Persistent isolated directory (${SANDBOX_BASE_DIR}/${APP_ID}), recommended default
+  //   "ephemeral" : In-memory temporary filesystem (tmpfs); all $HOME writes are discarded on sandbox exit
+  //   "app-dir"   : Portable green-mode; maps $HOME to a subdirectory within the app folder (${APP_DIR}/${APP_DIR_HOME_NAME})
+  //   "custom"    : Maps $HOME to a specified host directory (requires the `home_dir` property)
+  //   "cwd"       : Maps $HOME directly to the current launch directory ($PWD)
+  "home_mode": null,
+
+  // home_dir (string): Custom host absolute directory path when home_mode="custom".
+  "home_dir": "",
+
+  // cwd_mode (string | null): Current working directory ($PWD) visibility policy inside the sandbox.
+  //   null  : Automatic policy (GUI applications default to "none", CLI workspace tools default to "rw")
+  //   "none": Do not mount host $PWD; terminal directory is inaccessible inside the sandbox (safest)
+  //   "ro"  : Mount current working directory read-only and chdir into it
+  //   "rw"  : Mount current working directory read-write and chdir into it
+  "cwd_mode": null,
+
+  // app_dir_mode (string): Application directory mount policy.
+  //   "ro"  : Read-only mount of the application directory (recommended; prevents binary tampering or modification)
+  //   "rw"  : Read-write mount of the application directory (for self-updating or portable programs)
+  //   "none": Do not mount parent directory; only mounts the single executable binary read-only
+  "app_dir_mode": "ro",
+
+  // app_dir (string, optional): Explicit host absolute path to application root directory (auto-derived at runtime if omitted).
+  "app_dir": "",
+
+  // etc_mode (string): Host /etc directory mount policy.
+  //   "compat" : Complete read-only host /etc mount, masking sensitive credentials (/etc/shadow, /etc/gshadow) with /dev/null
+  //   "minimal": Minimalist /etc containing only essential runtime configs (ld.so.cache, resolv.conf, ssl, fonts)
+  "etc_mode": "compat",
+
+  // ----------------------------------------------------------------------------
+  // 3. Hardware Capabilities & Device Tuning
+  // ----------------------------------------------------------------------------
+
+  // capabilities (array of strings | null): Explicit list of enabled capabilities.
+  // If set to null, automatically inherits the preset capability list from the selected category.
+  // Available capability IDs (see catalog.json):
+  //   "display", "gpu", "audio", "input", "network", "fonts_theme",
+  //   "hud", "camera", "usb_serial", "bluetooth", "printing", "dbus", "notification"
+  "capabilities": null,
+
+  // add_caps (array of strings): Additional capability IDs to append to category presets (e.g. ["camera"])
+  "add_caps": [],
+
+  // drop_caps (array of strings): Capability IDs to exclude from category presets (e.g. ["gpu"])
+  "drop_caps": [],
+
+  // ----------------------------------------------------------------------------
+  // 4. Custom Path Binds & Mounts
+  // Syntax: "HOST_SRC[:CONTAINER_DEST]"
+  //   - Supports ~ to expand to current user's host $HOME (e.g. "~/data:/sandbox/data")
+  //   - If :CONTAINER_DEST is omitted, mounts to the identical path inside the sandbox
+  //   - Target mount point directories inside the sandbox are created automatically (--dir)
+  //   - If the host source path does not exist, it is gracefully skipped with a warning
+  // ----------------------------------------------------------------------------
+
+  // rw_binds (array of strings): Host directory/file paths mounted read-write into the sandbox
+  "rw_binds": [],
+
+  // ro_binds (array of strings): Host directory/file paths mounted read-only into the sandbox
+  "ro_binds": [],
+
+  // dev_binds (array of strings): Extra host device nodes passed into the sandbox (e.g. ["/dev/video0", "/dev/ttyUSB0"])
+  "dev_binds": [],
+
+  // ----------------------------------------------------------------------------
+  // 5. Advanced Runtime Options
+  // ----------------------------------------------------------------------------
+
+  // sandbox_base_dir (string): Persistent base directory root when home_mode="isolated"
+  "sandbox_base_dir": "${HOME}/.local/share/bwrap-sandbox",
+
+  // app_dir_home_name (string): Persistent subfolder name inside app directory when home_mode="app-dir"
+  "app_dir_home_name": ".sandbox-home",
+
+  // wine_prefix (string): Host directory for custom WINEPREFIX (defaults to $HOME/.wine in isolated sandbox HOME)
+  "wine_prefix": "",
+
+  // open_files_limit (integer): Maximum file descriptor limit inside the sandbox (ulimit -n)
+  "open_files_limit": 524288,
+
+  // new_session (boolean): Whether to launch in a new session (setsid / PR_SET_NO_NEW_PRIVS) to prevent privilege escalation
+  "new_session": true,
+
+  // tmpfs_dirs (array of strings): Absolute container paths mounted as pure in-memory tmpfs
+  "tmpfs_dirs": [],
+
+  // empty_dirs (array of strings): Absolute container paths pre-created as empty directories
+  "empty_dirs": [],
+
+  // symlinks (array of strings): Symbolic links created inside the sandbox in "TARGET:LINK_PATH" format
+  "symlinks": [],
+
+  // env (object): Environment variables injected into the sandbox (e.g. {"FOO": "bar", "DEBUG": "1"})
+  "env": {},
+
+  // unsetenv (array of strings): Host environment variable names masked/unset inside the sandbox
+  "unsetenv": [],
+
+  // bwrap_args (array of strings): Raw command-line arguments passed directly to the underlying bwrap binary
+  "bwrap_args": []
+}

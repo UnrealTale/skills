@@ -90,9 +90,3 @@ bwrap_parse_cli_args() {
     fi
   fi
 }
-
-bwrap_apply_runtime_extra_binds() {
-  if declare -F bwrap_apply_custom_mounts >/dev/null 2>&1; then
-    bwrap_apply_custom_mounts
-  fi
-}

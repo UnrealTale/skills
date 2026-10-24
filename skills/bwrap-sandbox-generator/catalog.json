@@ -5,6 +5,8 @@
     "helpers": "presets/base/helpers.sh",
     "core": "presets/base/core.sh",
     "entrypoint": "presets/base/entrypoint.sh",
+    "launcher_template": "presets/base/launcher-template.sh",
+    "config_template": "presets/base/config-template.json",
     "report_template": "presets/base/report-template.md"
   },
   "runtimes": {

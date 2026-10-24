@@ -1,6 +1,8 @@
 # ==============================================================================
 # Preset [base/core.sh]: Namespace Isolation, Read-Only RootFS, Configurable HOME/CWD/AppDir & Safe Workdir
 # ==============================================================================
+declare -a TARGET_EXEC_ARGS=()
+
 bwrap_init_base() {
   BWRAP_CMD=(
     bwrap
@@ -74,136 +76,9 @@ bwrap_setup_root_fs() {
   bwrap_ro_bind_try /opt
 }
 
-# Dynamically resolve the application identifier at runtime.
-# Priority:
-#   1. Explicit -i/--id (CUSTOM_APP_ID)
-#   2. Derived from target command binary or application directory name
-#   3. Fallback to DEFAULT_APP_ID (if defined) or "sandbox-app"
-bwrap_resolve_app_id() {
-  local target_cmd="${1:-}"
-  local app_dir="${2:-}"
-  local raw_id=""
-
-  if [[ -n "${CUSTOM_APP_ID:-}" ]]; then
-    raw_id="$CUSTOM_APP_ID"
-  elif [[ -n "${target_cmd:-}" && "$target_cmd" != "sandbox-app" ]]; then
-    local base_name
-    base_name="$(basename -- "$target_cmd")"
-    base_name="$(sed -E 's/\.(exe|EXE|msi|MSI|AppImage|appimage|sh|py|jar|x86_64|x86|bin|run)$//' <<< "$base_name")"
-
-    # If the binary name is a generic runner, use the parent application folder name
-    if [[ "$base_name" =~ ^(start|launch|launcher|run|game|play|AppRun|wine|wine64|umu-run|python|python3|java|bash|sh)$ ]] && \
-       [[ -n "$app_dir" && "$app_dir" != "/" && "$app_dir" != "$HOME" && "$app_dir" != "/usr" && "$app_dir" != "/bin" && "$app_dir" != "/opt" && "$app_dir" != "/sbin" ]]; then
-      raw_id="$(basename -- "$app_dir")"
-    else
-      raw_id="$base_name"
-    fi
-  elif [[ -n "${DEFAULT_APP_ID:-}" && "${DEFAULT_APP_ID}" != "auto" ]]; then
-    raw_id="$DEFAULT_APP_ID"
-  else
-    raw_id="sandbox-app"
-  fi
-
-  raw_id="${raw_id//[^a-zA-Z0-9._-]/_}"
-  [[ -z "$raw_id" ]] && raw_id="sandbox-app"
-  printf '%s\n' "$raw_id"
-}
-
-bwrap_setup_isolated_home() {
-  local app_id="$1"
-  local app_dir="${2:-}"
-  local sandbox_home=""
-  local home_mode="${HOME_MODE:-isolated}"
-  local base_dir="${SANDBOX_BASE_DIR:-${HOME}/.local/share/bwrap-sandbox}"
-  base_dir="${base_dir/#\~/$HOME}"
-  local app_dir_home="${APP_DIR_HOME_NAME:-.sandbox-home}"
-
-  # Runtime environment overrides
-  if [[ "${EPHEMERAL:-false}" == "true" ]]; then
-    home_mode="ephemeral"
-  elif [[ -n "${CUSTOM_HOME:-}" ]]; then
-    home_mode="custom"
-  fi
-
-  case "$home_mode" in
-    ephemeral)
-      sandbox_home=""
-      ;;
-    cwd)
-      if [[ -n "${PWD:-}" && "$PWD" != "$HOME" && "$PWD" != "/" ]]; then
-        sandbox_home="$PWD"
-      else
-        echo "Warning: Cannot map sandbox HOME to \$PWD when \$PWD is host \$HOME or /; falling back to ephemeral tmpfs." >&2
-        sandbox_home=""
-      fi
-      ;;
-    app-dir)
-      if [[ -n "$app_dir" && -d "$app_dir" && "$app_dir" != "$HOME" && "$app_dir" != "/" && "$app_dir" != "/usr"* && "$app_dir" != "/bin"* && "$app_dir" != "/opt"* ]]; then
-        sandbox_home="${app_dir}/${app_dir_home}"
-      else
-        sandbox_home="${base_dir}/${app_id}"
-      fi
-      ;;
-    custom)
-      sandbox_home="${CUSTOM_HOME:-${DEFAULT_CUSTOM_HOME:-}}"
-      sandbox_home="${sandbox_home/#\~/$HOME}"
-      if [[ -z "$sandbox_home" || "$sandbox_home" == "$HOME" || "$sandbox_home" == "/" ]]; then
-        echo "Error: Invalid or unsafe custom sandbox HOME directory: '${sandbox_home}'." >&2
-        exit 1
-      fi
-      ;;
-    isolated|*)
-      sandbox_home="${base_dir}/${app_id}"
-      ;;
-  esac
-
-  if [[ -n "$sandbox_home" ]]; then
-    mkdir -p "${sandbox_home}/.config" "${sandbox_home}/.local/share" "${sandbox_home}/.cache" 2>/dev/null || true
-    BWRAP_CMD+=(--bind "$sandbox_home" "$HOME")
-  else
-    BWRAP_CMD+=(--tmpfs "$HOME")
-  fi
-
-  BWRAP_CMD+=(
-    --setenv HOME "$HOME"
-    --setenv USER "${USER:-$(id -un)}"
-  )
-}
-
-bwrap_mount_app_directory() {
-  local app_dir="${1:-}"
-  local app_dir_mode="${APP_DIR_MODE:-ro}"
-  local cwd_mode="${CWD_MODE:-none}"
-
-  # 1. Mount application directory (if outside standard read-only system paths)
-  if [[ -n "$app_dir" && -d "$app_dir" && "$app_dir" != "$HOME" && "$app_dir" != "/" && "$app_dir" != "/usr"* && "$app_dir" != "/bin"* && "$app_dir" != "/sbin"* && "$app_dir" != "/lib"* && "$app_dir" != "/opt"* ]]; then
-    case "$app_dir_mode" in
-      rw)
-        bwrap_bind_try "$app_dir" "$app_dir"
-        ;;
-      ro)
-        bwrap_ro_bind_try "$app_dir" "$app_dir"
-        ;;
-      none)
-        ;;
-    esac
-  fi
-
-  # 2. Mount current working directory ($PWD) according to CWD_MODE policy
-  if [[ "$cwd_mode" != "none" ]]; then
-    if [[ -n "${PWD:-}" && "$PWD" != "$HOME" && "$PWD" != "/" ]]; then
-      if [[ "$cwd_mode" == "rw" ]]; then
-        bwrap_bind_try "$PWD" "$PWD"
-      elif [[ "$cwd_mode" == "ro" ]]; then
-        bwrap_ro_bind_try "$PWD" "$PWD"
-      fi
-    else
-      echo "Warning: Current directory is \$HOME or /; refusing to mount \$PWD automatically for least-privilege safety." >&2
-    fi
-  fi
-}
-
 bwrap_apply_custom_mounts() {
+  local spec
+
   # 1. Mount from RW_BINDS array (read-write)
   if [[ -n "${RW_BINDS+x}" ]]; then
     for spec in "${RW_BINDS[@]}"; do
@@ -225,78 +100,154 @@ bwrap_apply_custom_mounts() {
     done
   fi
 
-  # 4. External environment variable overrides (space/comma separated)
-  if [[ -n "${EXTRA_RW_BINDS:-}" ]]; then
-    local spec
-    for spec in ${EXTRA_RW_BINDS//,/ }; do
+  # 4. External environment variable overrides (space or comma separated)
+  local extra_rw="${EXTRA_RW_BINDS:-${BWRAP_BINDS:-}}"
+  if [[ -n "$extra_rw" ]]; then
+    for spec in ${extra_rw//,/ }; do
       bwrap_mount_spec "bind" "$spec"
-    done
-  fi
-  if [[ -n "${EXTRA_RO_BINDS:-}" ]]; then
-    local spec
-    for spec in ${EXTRA_RO_BINDS//,/ }; do
-      bwrap_mount_spec "ro-bind" "$spec"
-    done
-  fi
-  if [[ -n "${EXTRA_DEV_BINDS:-}" ]]; then
-    local spec
-    for spec in ${EXTRA_DEV_BINDS//,/ }; do
-      bwrap_mount_spec "dev-bind" "$spec"
     done
   fi
 
-  # Legacy compatibility for BWRAP_BINDS / BWRAP_RO_BINDS / BWRAP_DEV_BINDS
-  if [[ -n "${BWRAP_BINDS:-}" ]]; then
-    local spec
-    for spec in ${BWRAP_BINDS//,/ }; do
-      bwrap_mount_spec "bind" "$spec"
-    done
-  fi
-  if [[ -n "${BWRAP_RO_BINDS:-}" ]]; then
-    local spec
-    for spec in ${BWRAP_RO_BINDS//,/ }; do
+  local extra_ro="${EXTRA_RO_BINDS:-${BWRAP_RO_BINDS:-}}"
+  if [[ -n "$extra_ro" ]]; then
+    for spec in ${extra_ro//,/ }; do
       bwrap_mount_spec "ro-bind" "$spec"
     done
   fi
-  if [[ -n "${BWRAP_DEV_BINDS:-}" ]]; then
-    local spec
-    for spec in ${BWRAP_DEV_BINDS//,/ }; do
+
+  local extra_dev="${EXTRA_DEV_BINDS:-${BWRAP_DEV_BINDS:-}}"
+  if [[ -n "$extra_dev" ]]; then
+    for spec in ${extra_dev//,/ }; do
       bwrap_mount_spec "dev-bind" "$spec"
     done
   fi
 }
 
-bwrap_apply_custom_whitelists() {
-  bwrap_apply_custom_mounts
-}
+# Initialize complete application lifecycle context:
+#   1. Resolves canonical executable/file path
+#   2. Resolves application root directory (honoring APP_DIR or target path)
+#   3. Resolves application identifier (CUSTOM_APP_ID -> DEFAULT_APP_ID -> sandbox-app)
+#   4. Initializes persistent or isolated sandbox HOME (HOME_MODE)
+#   5. Mounts application directory (ro/rw/none) or single target executable
+#   6. Configures container working directory and mounts CWD (CWD_MODE)
+bwrap_init_app_context() {
+  local app_target="${1:-}"
 
-bwrap_set_safe_workdir() {
-  local app_dir="${1:-}"
+  # 1. Resolve canonical executable/file path
+  local app_exe=""
+  if [[ -n "$app_target" ]]; then
+    if [[ -e "$app_target" ]]; then
+      app_exe="$(realpath "$app_target")"
+    elif [[ "$app_target" != -* ]] && command -v -- "$app_target" >/dev/null 2>&1; then
+      app_exe="$(realpath "$(command -v -- "$app_target")")"
+    else
+      app_exe="$app_target"
+    fi
+  fi
+
+  # 2. Resolve application root directory
+  local app_dir=""
+  local manual_app_dir="${APP_DIR:-}"
+  if [[ -n "$manual_app_dir" ]]; then
+    manual_app_dir="${manual_app_dir/#\~/$HOME}"
+    app_dir="$(realpath -m "$manual_app_dir")"
+  elif [[ -n "$app_exe" && -e "$app_exe" ]]; then
+    if [[ -d "$app_exe" ]]; then
+      app_dir="$app_exe"
+    else
+      app_dir="$(dirname "$app_exe")"
+    fi
+  fi
+
+  # 3. Resolve application identifier
+  local app_id="${CUSTOM_APP_ID:-}"
+  if [[ -z "$app_id" ]]; then
+    app_id="${DEFAULT_APP_ID:-sandbox-app}"
+    [[ "$app_id" == "auto" ]] && app_id="sandbox-app"
+  fi
+  app_id="${app_id//[^a-zA-Z0-9._-]/_}"
+  app_id="${app_id:-sandbox-app}"
+
+  # 4. Initialize sandbox HOME
+  local sandbox_home=""
+  local home_mode="${HOME_MODE:-isolated}"
+  local base_dir="${SANDBOX_BASE_DIR:-${HOME}/.local/share/bwrap-sandbox}"
+  base_dir="${base_dir/#\~/$HOME}"
+  local app_dir_home="${APP_DIR_HOME_NAME:-.sandbox-home}"
+
+  if [[ "${EPHEMERAL:-false}" == "true" ]]; then
+    home_mode="ephemeral"
+  elif [[ -n "${CUSTOM_HOME:-}" ]]; then
+    home_mode="custom"
+  fi
+
+  case "$home_mode" in
+    ephemeral)
+      sandbox_home=""
+      ;;
+    cwd)
+      sandbox_home="${PWD:-}"
+      ;;
+    app-dir)
+      if [[ -n "$app_dir" && -d "$app_dir" ]]; then
+        sandbox_home="${app_dir}/${app_dir_home}"
+      else
+        sandbox_home="${base_dir}/${app_id}"
+      fi
+      ;;
+    custom)
+      sandbox_home="${CUSTOM_HOME:-}"
+      sandbox_home="${sandbox_home/#\~/$HOME}"
+      if [[ -z "$sandbox_home" ]]; then
+        echo "Error: CUSTOM_HOME is empty." >&2
+        exit 1
+      fi
+      ;;
+    isolated|*)
+      sandbox_home="${base_dir}/${app_id}"
+      ;;
+  esac
+
+  if [[ -n "$sandbox_home" ]]; then
+    mkdir -p "${sandbox_home}/.config" "${sandbox_home}/.local/share" "${sandbox_home}/.cache" 2>/dev/null || true
+    BWRAP_CMD+=(--bind "$sandbox_home" "$HOME")
+  else
+    BWRAP_CMD+=(--tmpfs "$HOME")
+  fi
+  BWRAP_CMD+=(
+    --setenv HOME "$HOME"
+    --setenv USER "${USER:-$(id -un)}"
+  )
+
+  # 5. Mount application directory or standalone executable
+  local app_dir_mode="${APP_DIR_MODE:-ro}"
+  if [[ "$app_dir_mode" != "none" && -n "$app_dir" && -d "$app_dir" && "$app_dir" != "$HOME" && "$app_dir" != "/" && "$app_dir" != "/usr"* && "$app_dir" != "/bin"* && "$app_dir" != "/sbin"* && "$app_dir" != "/lib"* && "$app_dir" != "/opt"* ]]; then
+    if [[ "$app_dir_mode" == "rw" ]]; then
+      bwrap_bind_try "$app_dir" "$app_dir"
+    elif [[ "$app_dir_mode" == "ro" ]]; then
+      bwrap_ro_bind_try "$app_dir" "$app_dir"
+    fi
+  elif [[ -n "$app_exe" && -f "$app_exe" ]]; then
+    bwrap_ro_bind_try "$app_exe" "$app_exe"
+  fi
+
+  # 6. Working directory and CWD mounting policy
   local cwd_mode="${CWD_MODE:-none}"
   [[ "${MOUNT_CWD:-false}" == "true" && "$cwd_mode" == "none" ]] && cwd_mode="rw"
 
   if [[ "${HOME_MODE:-isolated}" == "cwd" ]]; then
     BWRAP_CMD+=(--chdir "$HOME")
-    return 0
-  fi
-
-  if [[ -n "${PWD:-}" && "$PWD" != "$HOME" && "$PWD" != "/" ]]; then
-    if [[ -n "$app_dir" && "$PWD" == "$app_dir"* && -d "$PWD" && "${APP_DIR_MODE:-ro}" != "none" ]]; then
-      BWRAP_CMD+=(--chdir "$PWD")
-      return 0
-    fi
-    if [[ "$cwd_mode" != "none" && -d "$PWD" ]]; then
-      BWRAP_CMD+=(--chdir "$PWD")
-      return 0
-    fi
-  fi
-
-  if [[ -n "$app_dir" && -d "$app_dir" && "$app_dir" != "$HOME" && "$app_dir" != "/" && "${APP_DIR_MODE:-ro}" != "none" ]]; then
+  elif [[ "$cwd_mode" == "rw" ]]; then
+    bwrap_bind_try "$PWD" "$PWD"
+    BWRAP_CMD+=(--chdir "$PWD")
+  elif [[ "$cwd_mode" == "ro" ]]; then
+    bwrap_ro_bind_try "$PWD" "$PWD"
+    BWRAP_CMD+=(--chdir "$PWD")
+  elif [[ -n "$app_dir" && -d "$app_dir" && "$app_dir_mode" != "none" ]]; then
     BWRAP_CMD+=(--chdir "$app_dir")
-    return 0
+  else
+    BWRAP_CMD+=(--chdir "$HOME")
   fi
-
-  BWRAP_CMD+=(--chdir "$HOME")
 }
 
 bwrap_exec() {

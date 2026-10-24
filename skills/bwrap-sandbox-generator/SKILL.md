@@ -20,15 +20,18 @@ To avoid coupling between software taxonomy, shell code, and orchestration scrip
    - *Rule*: Never hardcode category or capability definitions in Python scripts. To add or modify a software category, edit `catalog.json` only.
 
 2. **[`presets/`](presets/) (Modular Minimal-Privilege Shell Functions & Templates)**:
+   - `presets/base/config-template.json`: Self-documenting declarative JSON configuration template containing comprehensive comments, parameter specifications, and default values.
+   - `presets/base/launcher-template.sh`: Clean Shell launcher template with `{{PLACEHOLDER}}` tokens, enabling standalone syntax validation (`bash -n`) and eliminating string concatenation in code.
    - `presets/base/helpers.sh`: Low-level mount helpers (`bwrap_mount_spec` supporting `SRC[:DEST]` syntax, tilde expansion, and automatic `--dir` creation; `bwrap_bind`, `bwrap_ro_bind`, `bwrap_bind_try`, `bwrap_ro_bind_try`, `bwrap_dev_bind_try`, `bwrap_setenv`).
-   - `presets/base/core.sh`: Core namespace initialization, read-only rootfs with `/etc/shadow` and `/etc/gshadow` masked to `/dev/null`, configurable sandbox `$HOME` (`isolated`, `cwd`, `app-dir`, `custom`, `ephemeral`), configurable `$PWD` (`none`, `ro`, `rw`) and `APP_DIR` (`ro`, `rw`, `none`) policies, `bwrap_apply_custom_mounts` for `RW_BINDS`/`RO_BINDS`/`DEV_BINDS` arrays, dynamic `APP_ID` priority resolution, and the `--trace` interactive `strace` wrapper inside `bwrap_exec`.
+   - `presets/base/core.sh`: Core pipeline functions: namespace initialization (`bwrap_init_base`), rootfs protection (`bwrap_setup_root_fs`), custom array mounting (`bwrap_apply_custom_mounts`), unified application lifecycle context (`bwrap_init_app_context`), and execution/tracing (`bwrap_exec`).
    - `presets/base/entrypoint.sh`: Streamlined CLI argument parser supporting high-frequency overrides (`-i|--id`, `--trace`, `-v|--verbose`, `-h|--help`). Automatically stops parsing upon encountering the target command or `--` to ensure target program flags pass through completely unhindered.
    - `presets/base/report-template.md`: Structural template for the **Sandbox Security Briefing** (must be localized into the user's language by the Agent).
    - `presets/capabilities/*.sh`: One standalone `.sh` file per capability, defining a single minimal-privilege shell function. All hardware paths use cross-vendor/cross-distro `*-try` mounts (e.g., `gpu.sh` simultaneously includes AMD, Intel, NVIDIA, and Vulkan ICD paths).
-   - `presets/runtimes/*.sh`: One standalone `.sh` file per runtime environment.
+   - `presets/runtimes/*.sh`: One standalone `.sh` file per runtime environment (each delegating application mounting and isolation setup to `bwrap_init_app_context`).
 
 3. **[`scripts/generate.py`](scripts/generate.py) (Pure Configuration Assembler + Mandatory Audit Gatekeeper)**:
-   - Reads `catalog.json`, resolves capabilities (`--category` + `--add-cap` - `--drop-cap`), applies user policy choices (`--home-mode`, `--home-dir`, `--cwd-mode`, `--app-dir-mode`, `--default-net`/`--no-default-net`, `--etc-mode`), and outputs a clean, directly editable declarative header with `RW_BINDS`, `RO_BINDS`, and `DEV_BINDS` arrays. Accepts `--bind`, `--ro-bind`, and `--dev-bind` in `SRC[:DEST]` syntax.
+   - Operates on declarative configuration (`presets/base/config-template.json`, standalone JSON files, stdin `-`, or inline `--json '<json_str>'`). All available options, policies, and format specifications are documented directly as comments in [`presets/base/config-template.json`](presets/base/config-template.json).
+   - Resolves capabilities and user policies into pure placeholder substitutions over [`presets/base/launcher-template.sh`](presets/base/launcher-template.sh).
    - **Built-in Audit Gatekeeper**: Automatically executes `scripts/audit.py` on every generated script before granting `+x` permissions. If `audit.py` returns `FAIL`, `generate.py` strips executable bits (`0600`) and exits with code `1`.
    - Outputs structured `briefing_data` JSON so the Agent can render `presets/base/report-template.md` in the user's language.
 
@@ -63,48 +66,56 @@ flowchart TD
 ### Step 1: Classify the Application & Wrapper Mode (Generic Launcher vs. Dedicated App)
 Inspect the user's request (`file <target>` or `python3 scripts/generate.py --list`) and determine:
 - **Wrapper Mode**:
-  - **Generic / Reusable Category Launcher** (e.g., *"Generate a bwrap script for all Wine games"* or *"Generate a generic sandbox for AppImages"*): Set `--app-id auto` (default) and omit `--target`. At runtime, `bwrap_resolve_app_id` in `core.sh` dynamically derives `<app-id>` from the passed executable name, parent folder name (when the executable is a generic script like `start.sh`/`game.exe`), or launcher env vars (`LUTRIS_GAME_SLUG`, `UMU_ID`, `STEAM_COMPAT_APP_ID`, `-i|--id`), so every program launched through the generic wrapper automatically gets its own isolated `~/.local/share/bwrap-sandbox/<app-id>` (or `<app_dir>/.sandbox-home`), its own `WINEPREFIX`, and its own `app_dir` mount!
-  - **Dedicated Single-App Wrapper** (e.g., *"Sandbox `/opt/telegram/Telegram`"*): Set `--app-id "<app-name>"` and `--target "<default-target-path>"`.
-- **Layer 1 Runtime (`--runtime`)**: `native-elf`, `appimage`, `electron`, `wine`, or `interpreted`.
-- **Layer 2 Category (`--category`)**: Choose one of the 23 Freedesktop-mapped category IDs in `catalog.json`:
+  - **Generic / Reusable Category Launcher** (e.g., *"Generate a bwrap script for all Wine games"* or *"Generate a generic sandbox for AppImages"*): Set `"app_id": "sandbox-app"` (default) and leave `"target": []`. At runtime, users can specify a custom app ID via `-i|--id <ID>` to isolate persistent data (`~/.local/share/bwrap-sandbox/<ID>`), or let it fall back safely to `sandbox-app` without error-prone regex guessing.
+  - **Dedicated Single-App Wrapper** (e.g., *"Sandbox `/opt/telegram/Telegram`"*): Set `"app_id": "<app-name>"` and `"target": ["<default-target-path>", "<default-args...>"]`.
+- **Layer 1 Runtime (`runtime`)**: `native-elf`, `appimage`, `electron`, `wine`, or `interpreted`.
+- **Layer 2 Category (`category`)**: Choose one of the 23 Freedesktop-mapped category IDs in `catalog.json`:
   `game`, `game-online`, `emulator`, `web-browser`, `instant-messaging`, `video-conference`, `email-client`, `file-transfer`, `remote-access`, `media-player`, `media-production`, `graphics-2d`, `graphics-3d`, `office-publishing`, `scanning-ocr`, `ide-development`, `science-ai`, `hardware-embedded`, `virtualization`, `desktop-utility`, `cli-pure`, `cli-workspace`, `cli-network`.
 
 ### Step 2: Confirm User-Preference Isolation Policies (Interactive Selection)
 Certain isolation policies **cannot** be inferred solely from the binary type and depend on the user's personal intent. Unless the user has already specified these in their prompt, **ask the user to choose** (using the `ask_question` tool if available, or a concise question in the user's language, with `(Recommended)` on the sensible default for that app):
 
-1. **Sandbox `$HOME` Mapping Mode (`--home-mode`)**:
-   - `isolated` *(Recommended for most GUI/desktop apps & generic launchers)*: Map sandbox `$HOME` to `~/.local/share/bwrap-sandbox/<app-id>` (where `<app-id>` is dynamically derived at runtime when `--app-id auto` is used), keeping each app's configs/saves persistent without polluting the real host `$HOME`.
+1. **Sandbox `$HOME` Mapping Mode (`home_mode`)**:
+   - `isolated` *(Recommended for most GUI/desktop apps & generic launchers)*: Map sandbox `$HOME` to `~/.local/share/bwrap-sandbox/<app-id>` (where `<app-id>` is determined by `-i/--id`, header default, or fallback to `sandbox-app`), keeping each app's configs/saves persistent without polluting the real host `$HOME`.
    - `cwd`: Map sandbox `$HOME` directly to the current working directory (`$PWD`) when launched.
    - `app-dir`: Map sandbox `$HOME` to `<app_dir>/.sandbox-home` inside the runtime target program's own folder (portable / "green software" mode).
-   - `custom`: Map sandbox `$HOME` to a specific directory path chosen by the user (`--home-dir <PATH>`).
+   - `custom`: Map sandbox `$HOME` to a specific directory path chosen by the user (`"home_dir": "<PATH>"`).
    - `ephemeral` *(Recommended for pure CLI utilities / untrusted binaries)*: Do not map sandbox `$HOME` to disk at all (`--tmpfs "$HOME"`); all writes are kept in memory and wiped on exit.
-2. **Current Working Directory (`$PWD`) Access (`--cwd-mode`)**:
+2. **Current Working Directory (`$PWD`) Access (`cwd_mode`)**:
    - `none` *(Recommended for GUI apps/games)*: Do not mount `$PWD` into the sandbox.
    - `ro`: Mount `$PWD` Read-Only (`--ro-bind "$PWD" "$PWD"`).
    - `rw` *(Recommended for `cli-workspace` / compilers / editors)*: Mount `$PWD` Read-Write (`--bind "$PWD" "$PWD"`).
-3. **Application Directory (`APP_DIR`) Access (`--app-dir-mode`)** *(Ask when target executables reside in local/user directories outside `/usr`, `/bin`, `/opt`)*:
+3. **Application Directory (`APP_DIR`) Access (`app_dir_mode` and `app_dir`)** *(Ask when target executables reside in local/user directories outside `/usr`, `/bin`, `/opt`)*:
    - `ro` *(Recommended for security)*: Mount the application's parent directory Read-Only so the binary can read its bundled assets/libs but cannot modify or infect files in its directory.
    - `rw`: Mount the application's parent directory Read-Write (for portable apps or games that write saves, logs, or updates directly into their own program directory).
    - `none`: Do not auto-mount the application's parent directory (mount only the binary file itself).
-4. **Network Access Policy (`--default-net` / `--no-default-net`)**:
-   - Confirm whether network access should be **Enabled** (`--default-net`) or **Disabled / Offline** (`--no-default-net`, `--unshare-net`) by default.
-5. **Additional Shared Host Directories (`--bind` / `--ro-bind` with `SRC[:DEST]`) & `/etc` Hardening (Optional)**:
-   - Ask if the user needs specific host folders bound (e.g., `--bind ~/Documents:/workspace` or `--ro-bind ~/Downloads:/downloads`), and whether `/etc` should use standard `compat` mode (default) or hardened `minimal` mode (`--etc-mode minimal`).
+   - `"app_dir": "<PATH>"`: Explicitly set the application root directory if the executable resides in a subdirectory (e.g., `MyGame/bin/x86_64/game` -> specify `"app_dir": "/path/to/MyGame"`). Can also be overridden at runtime via `APP_DIR="/path"` in the script header or environment.
+4. **Network Access Policy (`default_net`)**:
+   - Confirm whether network access should be **Enabled** (`"default_net": true`) or **Disabled / Offline** (`"default_net": false`, `--unshare-net`) by default.
+5. **Additional Shared Host Directories (`rw_binds` / `ro_binds` with `SRC[:DEST]`) & `/etc` Hardening (Optional)**:
+   - Ask if the user needs specific host folders bound (e.g., `"rw_binds": ["~/Documents:/workspace"]` or `"ro_binds": ["~/Downloads:/downloads"]`), and whether `/etc` should use standard `compat` mode (default) or hardened `minimal` mode (`"etc_mode": "minimal"`).
 
 ### Step 3: Generate the Sandbox Script
-Run `scripts/generate.py` with the classified presets, user-selected policies, and any custom binds:
+Run `scripts/generate.py` with the declarative configuration (via `--json` for inline calls or passing a `config.json` file):
 ```bash
-python3 <skill-dir>/scripts/generate.py \
-  --app-id "<auto-or-app-name>" \
-  --runtime "<runtime-id>" \
-  --category "<category-id>" \
-  --home-mode "<isolated|cwd|app-dir|custom|ephemeral>" \
-  --cwd-mode "<none|ro|rw>" \
-  --app-dir-mode "<ro|rw|none>" \
-  --bind "<HOST_PATH[:SANDBOX_PATH]>" \
-  --ro-bind "<HOST_PATH[:SANDBOX_PATH]>" \
-  -o "<output-script-path>" \
-  --report "<output-briefing-path.md>"
+# Inline JSON invocation (Recommended for Agent automation)
+python3 <skill-dir>/scripts/generate.py --json '{
+  "app_id": "<auto-or-app-name>",
+  "runtime": "<runtime-id>",
+  "category": "<category-id>",
+  "target": ["<target-executable-path>", "<default-arg1>"],
+  "home_mode": "<isolated|cwd|app-dir|custom|ephemeral>",
+  "cwd_mode": "<none|ro|rw>",
+  "app_dir_mode": "<ro|rw|none>",
+  "app_dir": "<optional-explicit-app-root-path>",
+  "rw_binds": ["<HOST_PATH[:SANDBOX_PATH]>"],
+  "ro_binds": ["<HOST_PATH[:SANDBOX_PATH]>"],
+  "output": "<output-script-path>",
+  "report": "<output-briefing-path.md>"
+}'
+
+# Alternatively, pass a configuration file directly:
+# python3 <skill-dir>/scripts/generate.py config.json [-o <output-script-path>]
 ```
 `generate.py` automatically runs `scripts/audit.py` before marking `<output-script-path>` executable, and returns `expected_report_file` (defaulting to `<output-script-stem>-briefing.md` alongside the generated script) and `briefing_data` in JSON.
 
@@ -133,9 +144,9 @@ Never run `probe.py` before testing the static preset script first.
   > **NEVER autonomously bind non-preset paths discovered by `probe.py`!**
   > While a legitimate application (such as an Office suite) may request access to `~/Documents`, a malicious or compromised binary could wipe, corrupt, or exfiltrate all files in `~/Documents`.
   1. **Filter Out `CRITICAL_FORBIDDEN` Paths**: Never propose or bind paths classified as `CRITICAL_FORBIDDEN` (`~/.ssh`, `~/.gnupg`, `~/.bashrc`, `docker.sock`, `/etc/shadow`, etc.).
-  2. **Report All Candidate Non-Preset Paths & Primitives to the User**: List every candidate path, its requested access mode (`--ro-bind`, `--bind`, or `--dev-bind`), its risk classification (`HIGH_USER_DATA` vs `NON_PRESET_CUSTOM`), and why the application requested it.
+  2. **Report All Candidate Non-Preset Paths & Primitives to the User**: List every candidate path, its requested access mode (`ro_binds`, `rw_binds`, or `dev_binds`), its risk classification (`HIGH_USER_DATA` vs `NON_PRESET_CUSTOM`), and why the application requested it.
   3. **Require Explicit User Selection**: Ask the user which specific paths or capabilities they authorize binding into the sandbox so the user explicitly assumes the risk.
-  4. **Re-Run `generate.py` with User-Approved Options Only** (`--add-cap`, `--ro-bind`, `--bind`, `--dev-bind`, `--bwrap-arg`, `--setenv`), which automatically re-runs `scripts/audit.py`.
+  4. **Re-Run `generate.py` with User-Approved Options Only** (updating `add_caps`, `ro_binds`, `rw_binds`, `dev_binds`, `bwrap_args`, `env`), which automatically re-runs `scripts/audit.py`.
 
 ### Step 6: Write Localized Sandbox Security Briefing File to Disk & Present to User (MANDATORY)
 > **CRITICAL REQUIREMENT — BOTH FILE CREATION AND USER-LANGUAGE LOCALIZATION ARE MANDATORY**:

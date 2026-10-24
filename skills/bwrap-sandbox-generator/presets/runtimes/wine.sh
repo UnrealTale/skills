@@ -1,7 +1,6 @@
 # ==============================================================================
 # Runtime Preset [wine]: Wine / Wine-GE / Proton / UMU Windows Translation Layer
 # ==============================================================================
-declare -a TARGET_EXEC_ARGS=()
 
 bwrap_configure_runtime() {
   if [[ $# -eq 0 ]]; then
@@ -23,17 +22,8 @@ bwrap_configure_runtime() {
     fi
   done
 
-  local app_dir=""
-  if [[ -n "$exe_file" && -e "$exe_file" ]]; then
-    local real_exe
-    real_exe="$(realpath "$exe_file")"
-    app_dir="$(dirname "$real_exe")"
-  fi
-
-  local app_id
-  app_id="$(bwrap_resolve_app_id "${exe_file:-$1}" "$app_dir")"
-
-  bwrap_setup_isolated_home "$app_id" "$app_dir"
+  # Initialize application directory, isolated HOME, and safe workdir
+  bwrap_init_app_context "${exe_file:-$1}"
 
   # Resolve WINEPREFIX:
   # - If explicitly specified via WINE_PREFIX in header or CLI_PREFIX / BWRAP_WINE_PREFIX / WINEPREFIX env var, mount that prefix.
@@ -81,7 +71,4 @@ bwrap_configure_runtime() {
   bwrap_bind_try "${HOME}/.cache/umu-protonfixes" "${HOME}/.cache/umu-protonfixes"
   bwrap_bind_try "${HOME}/.local/share/Steam" "${HOME}/.local/share/Steam"
   bwrap_bind_try "${HOME}/.steam" "${HOME}/.steam"
-
-  bwrap_mount_app_directory "$app_dir"
-  bwrap_set_safe_workdir "$app_dir"
 }

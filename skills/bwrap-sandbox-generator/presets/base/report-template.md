@@ -73,6 +73,9 @@ MANDATORY LOCALIZATION & FILE-WRITING RULE FOR THE AGENT:
 # [Localized: View assembled bwrap command before execution]
 {{OUTPUT_SCRIPT}} -v [app_args...]
 
+# [Localized: Explicit application root directory (if executable is in a subfolder e.g. MyGame/bin/game)]
+APP_DIR="/path/to/app" {{OUTPUT_SCRIPT}} [app_args...]
+
 # [Localized: Extra mounts can be directly edited in the script header (RW_BINDS / RO_BINDS) or passed via environment variables]
 EXTRA_RW_BINDS="/host/path:/sandbox/path" {{OUTPUT_SCRIPT}} [app_args...]
 ```
