@@ -98,6 +98,28 @@ RW_SYSTEM_DIR_RE = re.compile(
     r"(?:--(?:dev-)?bind(?:-try)?|bwrap_(?:dev_)?bind(?:_try)?)\s+['\"]?(/(?:usr|etc|boot|bin|sbin|lib|lib64|lib32|opt|var|root|proc|sys)?/?)['\"]?\s+"
 )
 
+SYSTEM_ROOT_PATH_RE = re.compile(
+    r"^/(?:(?:usr|etc|boot|bin|sbin|lib|lib64|lib32|opt|var|root|proc|sys)(?:/.*)?|/?)$"
+)
+
+
+def extract_rw_binds(content: str) -> List[str]:
+    binds: List[str] = []
+    # 1. Match entries declared inside RW_BINDS=( ... )
+    m = re.search(r"\bRW_BINDS=\(\s*([\s\S]*?)\s*\)", content)
+    if m:
+        for line in m.group(1).splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            item = line.strip("\"'")
+            if item:
+                binds.append(item)
+    # 2. Match bwrap_mount_spec "bind" / 'bind' calls
+    for m in re.finditer(r'bwrap_mount_spec\s+["\']?bind["\']?\s+["\']?([^"\'\s]+)["\']?', content):
+        binds.append(m.group(1))
+    return binds
+
 # High-value personal user directories (Requires explicit user approval -> WARN)
 USER_PERSONAL_DATA_RE = re.compile(
     r"/(?:Documents|Downloads|Desktop|Pictures|Videos|Music|Work|Projects|workspace)(['\"/\s]|$)"
@@ -174,6 +196,16 @@ def audit_script(script_path: Path, catalog_path: Path) -> Dict[str, Any]:
             errors.append(
                 f"Destructive read-write mount of system directory '{sys_target}' detected in line: `{line}`. System paths must be mounted read-only (`--ro-bind`)."
             )
+
+    rw_bind_items = extract_rw_binds(content)
+    for item in rw_bind_items:
+        src = item.split(":", 1)[0]
+        dst = item.split(":", 1)[1] if ":" in item else item
+        if SYSTEM_ROOT_PATH_RE.match(src) or SYSTEM_ROOT_PATH_RE.match(dst):
+            errors.append(
+                f"Destructive read-write mount of system directory detected in RW_BINDS: '{item}'. System paths must be mounted read-only (`--ro-bind`)."
+            )
+
     if not any("Destructive read-write mount" in e for e in errors):
         checks_passed.append("system_dirs_read_only_protected")
 

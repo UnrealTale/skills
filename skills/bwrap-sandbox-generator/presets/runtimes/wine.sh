@@ -36,11 +36,13 @@ bwrap_configure_runtime() {
   bwrap_setup_isolated_home "$app_id" "$app_dir"
 
   # Resolve WINEPREFIX:
-  # - If explicitly specified via -p/--prefix, BWRAP_WINE_PREFIX, or WINEPREFIX, mount that prefix.
+  # - If explicitly specified via WINE_PREFIX in header or CLI_PREFIX / BWRAP_WINE_PREFIX / WINEPREFIX env var, mount that prefix.
   # - Otherwise, use ${HOME}/.wine inside the per-app isolated sandbox HOME so each Wine app/game
   #   automatically gets its own isolated prefix (e.g. ~/.local/share/bwrap-sandbox/<app_id>/.wine).
   local explicit_wineprefix=""
-  if [[ -n "${CLI_PREFIX:-}" ]]; then
+  if [[ -n "${WINE_PREFIX:-}" ]]; then
+    explicit_wineprefix="$WINE_PREFIX"
+  elif [[ -n "${CLI_PREFIX:-}" ]]; then
     explicit_wineprefix="$CLI_PREFIX"
   elif [[ -n "${BWRAP_WINE_PREFIX:-}" ]]; then
     explicit_wineprefix="$BWRAP_WINE_PREFIX"
@@ -49,9 +51,10 @@ bwrap_configure_runtime() {
   fi
 
   if [[ -n "$explicit_wineprefix" ]]; then
+    explicit_wineprefix="${explicit_wineprefix/#\~/$HOME}"
     mkdir -p "$explicit_wineprefix" 2>/dev/null || true
     local real_wineprefix
-    real_wineprefix="$(realpath "$explicit_wineprefix")"
+    real_wineprefix="$(realpath -m "$explicit_wineprefix")"
     bwrap_bind "$real_wineprefix" "$real_wineprefix"
     bwrap_setenv WINEPREFIX "$real_wineprefix"
   else

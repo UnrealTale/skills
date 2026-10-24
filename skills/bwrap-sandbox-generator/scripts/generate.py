@@ -51,6 +51,17 @@ def parse_symlink_pairs(items: List[str]) -> List[Tuple[str, str]]:
     return pairs
 
 
+def format_bash_array(var_name: str, items: Optional[List[str]], comment_example: str) -> str:
+    lines = [f"{var_name}=("]
+    if items:
+        for item in items:
+            lines.append(f'  "{item}"')
+    else:
+        lines.append(f'  # "{comment_example}"')
+    lines.append(")")
+    return "\n".join(lines)
+
+
 def assemble_script(
     catalog: Dict[str, Any],
     app_id: str,
@@ -65,6 +76,10 @@ def assemble_script(
     home_dir: str = "",
     cwd_mode: str = "none",
     app_dir_mode: str = "ro",
+    sandbox_base_dir: str = "${HOME}/.local/share/bwrap-sandbox",
+    app_dir_home_name: str = ".sandbox-home",
+    wine_prefix: str = "",
+    open_files_limit: int = 524288,
     extra_ro_binds: Optional[List[str]] = None,
     extra_rw_binds: Optional[List[str]] = None,
     extra_dev_binds: Optional[List[str]] = None,
@@ -99,10 +114,11 @@ def assemble_script(
         quoted = " ".join(f'"{arg}"' for arg in default_target)
         default_cmd_str = f"DEFAULT_TARGET_CMD=({quoted})"
 
-    mount_cwd_bool = "true" if cwd_mode in ("rw", "ro") else "false"
-    ephemeral_bool = "true" if home_mode == "ephemeral" else "false"
+    rw_binds_block = format_bash_array("RW_BINDS", extra_rw_binds, "/host/path:/sandbox/path")
+    ro_binds_block = format_bash_array("RO_BINDS", extra_ro_binds, "/host/docs:/sandbox/docs")
+    dev_binds_block = format_bash_array("DEV_BINDS", extra_dev_binds, "/dev/video0")
 
-    # 1. Header & Global Toggles
+    # 1. Header & Configuration
     sections: List[str] = [
         "#!/usr/bin/env bash",
         "# ==============================================================================",
@@ -113,36 +129,50 @@ def assemble_script(
         f"# Policies         : home={home_mode}, cwd={cwd_mode}, app_dir={app_dir_mode}, net={default_net}, etc={etc_mode}",
         "# ==============================================================================",
         "set -euo pipefail",
-        "ulimit -n 524288 2>/dev/null || true",
+        f"OPEN_FILES_LIMIT={open_files_limit}",
+        'ulimit -n "$OPEN_FILES_LIMIT" 2>/dev/null || true',
         "",
         "declare -a BWRAP_CMD=(bwrap)",
+        "",
+        "# ==============================================================================",
+        "# Sandbox Configuration (Directly Editable)",
+        "# ==============================================================================",
         f'DEFAULT_APP_ID="{app_id}"',
         default_cmd_str,
-        f'ALLOW_NET="${{BWRAP_NET:-{"true" if default_net else "false"}}}"',
-        '[[ "$ALLOW_NET" == "1" ]] && ALLOW_NET=true',
-        '[[ "$ALLOW_NET" == "0" ]] && ALLOW_NET=false',
-        'VERBOSE="${BWRAP_VERBOSE:-false}"',
-        '[[ "$VERBOSE" == "1" ]] && VERBOSE=true',
-        f'ETC_MODE="${{BWRAP_ETC_MODE:-{etc_mode}}}"',
-        f'NEW_SESSION="${{BWRAP_NEW_SESSION:-{"true" if new_session else "false"}}}"',
-        f'HOME_MODE="${{BWRAP_HOME_MODE:-{home_mode}}}"',
-        f'DEFAULT_CUSTOM_HOME="{home_dir}"',
-        f'CWD_MODE="${{BWRAP_CWD_MODE:-{cwd_mode}}}"',
-        f'APP_DIR_MODE="${{BWRAP_APP_DIR_MODE:-{app_dir_mode}}}"',
-        f'MOUNT_CWD="${{BWRAP_MOUNT_CWD:-{mount_cwd_bool}}}"',
-        f'EPHEMERAL="${{EPHEMERAL:-{ephemeral_bool}}}"',
         "",
-        "# Capability module toggle variables",
+        "# Storage & Directory Locations",
+        f'SANDBOX_BASE_DIR="{sandbox_base_dir}" # Base directory for isolated HOME (~/.local/share/bwrap-sandbox/<app-id>)',
+        f'APP_DIR_HOME_NAME="{app_dir_home_name}"                     # Subdirectory name inside app folder when HOME_MODE="app-dir"',
     ]
 
-    for cap_id in capabilities:
-        if cap_id == "network":
-            continue
-        toggle_var = caps_cfg[cap_id]["toggle_var"]
-        sections.append(f'{toggle_var}="${{BWRAP_{toggle_var}:-true}}"')
+    if runtime_id == "wine":
+        sections.extend(
+            [
+                "",
+                "# Wine Environment Configuration",
+                f'WINE_PREFIX="{wine_prefix}"                                        # Custom WINEPREFIX host path (leave empty for isolated $HOME/.wine)',
+            ]
+        )
 
     sections.extend(
         [
+            "",
+            "# Network & Isolation Policies",
+            f'ALLOW_NET={"true" if default_net else "false"}',
+            f'HOME_MODE="{home_mode}"            # isolated | cwd | app-dir | custom | ephemeral',
+            f'CUSTOM_HOME="{home_dir}"',
+            f'CWD_MODE="{cwd_mode}"              # none | ro | rw',
+            f'APP_DIR_MODE="{app_dir_mode}"          # ro | rw | none',
+            f'ETC_MODE="{etc_mode}"              # compat | minimal',
+            f'NEW_SESSION={"true" if new_session else "false"}',
+            "VERBOSE=false",
+            "",
+            '# Custom Mounts: "HOST_PATH[:CONTAINER_PATH]" (Omit container path for same-name mount)',
+            rw_binds_block,
+            "",
+            ro_binds_block,
+            "",
+            dev_binds_block,
             "",
             'if [[ -n "${_BWRAP_SANDBOX_ACTIVE:-}" ]]; then',
             "  _BWRAP_IS_NESTED=true",
@@ -193,11 +223,8 @@ def assemble_script(
             continue
         call_lines.append(caps_cfg[cap_id]["function"])
 
-    has_extras = any(
+    has_other_extras = any(
         [
-            extra_ro_binds,
-            extra_rw_binds,
-            extra_dev_binds,
             extra_tmpfs_dirs,
             extra_empty_dirs,
             extra_symlinks,
@@ -206,14 +233,8 @@ def assemble_script(
             extra_bwrap_args,
         ]
     )
-    if has_extras:
+    if has_other_extras:
         call_lines.append("# Application-specific static extra mounts, primitives, and environment variables")
-        for ro_p in extra_ro_binds or []:
-            call_lines.append(f'bwrap_ro_bind_try "{ro_p}" "{ro_p}"')
-        for rw_p in extra_rw_binds or []:
-            call_lines.append(f'bwrap_bind_try "{rw_p}" "{rw_p}"')
-        for dev_p in extra_dev_binds or []:
-            call_lines.append(f'bwrap_dev_bind_try "{dev_p}" "{dev_p}"')
         for tmp_p in extra_tmpfs_dirs or []:
             call_lines.append(f'BWRAP_CMD+=(--tmpfs "{tmp_p}")')
         for dir_p in extra_empty_dirs or []:
@@ -231,7 +252,7 @@ def assemble_script(
 
     call_lines.extend(
         [
-            "bwrap_apply_runtime_extra_binds",
+            "bwrap_apply_custom_mounts",
             'bwrap_exec "${TARGET_EXEC_ARGS[@]}"',
             "",
         ]
@@ -283,15 +304,36 @@ def main() -> None:
     )
     parser.add_argument("--mount-cwd", action="store_true", default=None, help="Legacy alias for --cwd-mode rw")
     parser.add_argument("--ephemeral", action="store_true", default=None, help="Legacy alias for --home-mode ephemeral")
-    parser.add_argument("--ro-bind", action="append", default=[], help="Extra static read-only bind path (User-Approved)")
-    parser.add_argument("--bind", action="append", default=[], help="Extra static read-write bind path (User-Approved)")
-    parser.add_argument("--dev-bind", action="append", default=[], help="Extra static device node bind path (User-Approved)")
+    parser.add_argument("--ro-bind", action="append", default=[], help="Extra read-only bind path or SRC[:DEST] (User-Approved)")
+    parser.add_argument("--bind", action="append", default=[], help="Extra read-write bind path or SRC[:DEST] (User-Approved)")
+    parser.add_argument("--dev-bind", action="append", default=[], help="Extra device node bind path or SRC[:DEST] (User-Approved)")
     parser.add_argument("--tmpfs-dir", action="append", default=[], help="Extra tmpfs mount path inside sandbox")
     parser.add_argument("--empty-dir", action="append", default=[], help="Extra empty directory path to create inside sandbox")
     parser.add_argument("--symlink", action="append", default=[], help="Extra symlink in TARGET:LINK_PATH format")
     parser.add_argument("--setenv", action="append", default=[], help="Extra env var KEY=VALUE")
     parser.add_argument("--unsetenv", action="append", default=[], help="Unset environment variable inside sandbox")
     parser.add_argument("--bwrap-arg", action="append", default=[], help="Extra raw bwrap flag/argument")
+    parser.add_argument(
+        "--sandbox-base-dir",
+        default="${HOME}/.local/share/bwrap-sandbox",
+        help="Base host directory for per-app isolated HOME subdirectories (defaults to '${HOME}/.local/share/bwrap-sandbox')",
+    )
+    parser.add_argument(
+        "--app-dir-home-name",
+        default=".sandbox-home",
+        help="Subdirectory name inside application folder when --home-mode=app-dir (defaults to '.sandbox-home')",
+    )
+    parser.add_argument(
+        "--wine-prefix",
+        default="",
+        help="Custom WINEPREFIX host path when runtime is wine (defaults to empty string, which isolates in $HOME/.wine)",
+    )
+    parser.add_argument(
+        "--open-files-limit",
+        type=int,
+        default=524288,
+        help="ulimit -n open file descriptor limit configured in wrapper script (defaults to 524288)",
+    )
     parser.add_argument("-o", "--output", help="Output Bash script path")
     parser.add_argument("--report", help="Target file path where the Agent must write the localized Markdown Sandbox Security Briefing (defaults to <output-stem>-briefing.md)")
 
@@ -345,6 +387,10 @@ def main() -> None:
         extra_bwrap_args = cfg.get("extra_bwrap_args", args.bwrap_arg)
         output_path = cfg.get("output", args.output)
         report_path = cfg.get("report", args.report)
+        sandbox_base_dir = cfg.get("sandbox_base_dir", args.sandbox_base_dir)
+        app_dir_home_name = cfg.get("app_dir_home_name", args.app_dir_home_name)
+        wine_prefix = cfg.get("wine_prefix", args.wine_prefix)
+        open_files_limit = int(cfg.get("open_files_limit", args.open_files_limit))
     else:
         if not args.runtime or not args.category or not args.output:
             parser.error("--runtime, --category, and -o/--output are required (or use --list / --config-json).")
@@ -387,6 +433,10 @@ def main() -> None:
         extra_bwrap_args = args.bwrap_arg
         output_path = args.output
         report_path = args.report
+        sandbox_base_dir = args.sandbox_base_dir
+        app_dir_home_name = args.app_dir_home_name
+        wine_prefix = args.wine_prefix
+        open_files_limit = args.open_files_limit
 
     cat_meta = catalog["categories"][category_id]
     resolved_net = bool(cat_meta.get("default_net", False)) or ("network" in caps) if default_net is None else default_net
@@ -434,6 +484,10 @@ def main() -> None:
         home_dir=home_dir,
         cwd_mode=resolved_cwd_mode,
         app_dir_mode=app_dir_mode,
+        sandbox_base_dir=sandbox_base_dir,
+        app_dir_home_name=app_dir_home_name,
+        wine_prefix=wine_prefix,
+        open_files_limit=open_files_limit,
         extra_ro_binds=extra_ro_binds,
         extra_rw_binds=extra_rw_binds,
         extra_dev_binds=extra_dev_binds,
@@ -496,9 +550,9 @@ def main() -> None:
                         "app_id_mode": "dynamic-runtime (auto)" if app_id == "auto" else f"fixed ({app_id})",
                         "home_mode": resolved_home_mode,
                         "home_dir": home_dir if resolved_home_mode == "custom" else (
-                            f"~/.local/share/bwrap-sandbox/{app_id if app_id != 'auto' else '<app-id>'}" if resolved_home_mode == "isolated" else (
+                            f"{sandbox_base_dir}/{app_id if app_id != 'auto' else '<app-id>'}" if resolved_home_mode == "isolated" else (
                                 "$PWD" if resolved_home_mode == "cwd" else (
-                                    "<app_dir>/.sandbox-home" if resolved_home_mode == "app-dir" else "tmpfs (unmapped in-memory)"
+                                    f"<app_dir>/{app_dir_home_name}" if resolved_home_mode == "app-dir" else "tmpfs (unmapped in-memory)"
                                 )
                             )
                         ),

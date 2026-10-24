@@ -20,15 +20,15 @@ To avoid coupling between software taxonomy, shell code, and orchestration scrip
    - *Rule*: Never hardcode category or capability definitions in Python scripts. To add or modify a software category, edit `catalog.json` only.
 
 2. **[`presets/`](presets/) (Modular Minimal-Privilege Shell Functions & Templates)**:
-   - `presets/base/helpers.sh`: Low-level mount helpers (`bwrap_bind`, `bwrap_ro_bind`, `bwrap_bind_try`, `bwrap_ro_bind_try`, `bwrap_dev_bind_try`, `bwrap_setenv`).
-   - `presets/base/core.sh`: Core namespace initialization, read-only rootfs with `/etc/shadow` and `/etc/gshadow` masked to `/dev/null`, configurable sandbox `$HOME` (`isolated`, `cwd`, `app-dir`, `custom`, `ephemeral`), configurable `$PWD` (`none`, `ro`, `rw`) and `APP_DIR` (`ro`, `rw`, `none`) policies, and the `--trace` interactive `strace` wrapper inside `bwrap_exec`.
-   - `presets/base/entrypoint.sh`: CLI argument parser supporting runtime overrides (`-n`, `--no-net`, `-i`, `--home-mode`, `--home`, `--home-cwd`, `--home-app-dir`, `--ephemeral`, `-p`, `-w|--cwd-rw`, `--cwd-ro`, `--no-cwd`, `--app-dir-ro`, `--app-dir-rw`, `--no-app-dir`, `-b`, `-ro`, `-d|--dev-bind`, `--bwrap-arg`, `--trace`, `-v`, `-h`).
+   - `presets/base/helpers.sh`: Low-level mount helpers (`bwrap_mount_spec` supporting `SRC[:DEST]` syntax, tilde expansion, and automatic `--dir` creation; `bwrap_bind`, `bwrap_ro_bind`, `bwrap_bind_try`, `bwrap_ro_bind_try`, `bwrap_dev_bind_try`, `bwrap_setenv`).
+   - `presets/base/core.sh`: Core namespace initialization, read-only rootfs with `/etc/shadow` and `/etc/gshadow` masked to `/dev/null`, configurable sandbox `$HOME` (`isolated`, `cwd`, `app-dir`, `custom`, `ephemeral`), configurable `$PWD` (`none`, `ro`, `rw`) and `APP_DIR` (`ro`, `rw`, `none`) policies, `bwrap_apply_custom_mounts` for `RW_BINDS`/`RO_BINDS`/`DEV_BINDS` arrays, dynamic `APP_ID` priority resolution, and the `--trace` interactive `strace` wrapper inside `bwrap_exec`.
+   - `presets/base/entrypoint.sh`: Streamlined CLI argument parser supporting high-frequency overrides (`-i|--id`, `--trace`, `-v|--verbose`, `-h|--help`). Automatically stops parsing upon encountering the target command or `--` to ensure target program flags pass through completely unhindered.
    - `presets/base/report-template.md`: Structural template for the **Sandbox Security Briefing** (must be localized into the user's language by the Agent).
    - `presets/capabilities/*.sh`: One standalone `.sh` file per capability, defining a single minimal-privilege shell function. All hardware paths use cross-vendor/cross-distro `*-try` mounts (e.g., `gpu.sh` simultaneously includes AMD, Intel, NVIDIA, and Vulkan ICD paths).
    - `presets/runtimes/*.sh`: One standalone `.sh` file per runtime environment.
 
 3. **[`scripts/generate.py`](scripts/generate.py) (Pure Configuration Assembler + Mandatory Audit Gatekeeper)**:
-   - Reads `catalog.json`, resolves capabilities (`--category` + `--add-cap` - `--drop-cap`), applies user policy choices (`--home-mode`, `--home-dir`, `--cwd-mode`, `--app-dir-mode`, `--default-net`/`--no-default-net`, `--etc-mode`), and splices the `.sh` preset files together with any user-approved custom mounts (`--ro-bind`, `--bind`, `--dev-bind`) or low-level primitives (`--bwrap-arg`, `--setenv`, `--tmpfs-dir`, `--empty-dir`, `--symlink`).
+   - Reads `catalog.json`, resolves capabilities (`--category` + `--add-cap` - `--drop-cap`), applies user policy choices (`--home-mode`, `--home-dir`, `--cwd-mode`, `--app-dir-mode`, `--default-net`/`--no-default-net`, `--etc-mode`), and outputs a clean, directly editable declarative header with `RW_BINDS`, `RO_BINDS`, and `DEV_BINDS` arrays. Accepts `--bind`, `--ro-bind`, and `--dev-bind` in `SRC[:DEST]` syntax.
    - **Built-in Audit Gatekeeper**: Automatically executes `scripts/audit.py` on every generated script before granting `+x` permissions. If `audit.py` returns `FAIL`, `generate.py` strips executable bits (`0600`) and exits with code `1`.
    - Outputs structured `briefing_data` JSON so the Agent can render `presets/base/report-template.md` in the user's language.
 
@@ -88,19 +88,21 @@ Certain isolation policies **cannot** be inferred solely from the binary type an
    - `none`: Do not auto-mount the application's parent directory (mount only the binary file itself).
 4. **Network Access Policy (`--default-net` / `--no-default-net`)**:
    - Confirm whether network access should be **Enabled** (`--default-net`) or **Disabled / Offline** (`--no-default-net`, `--unshare-net`) by default.
-5. **Additional Shared Host Directories / `/etc` Hardening (Optional)**:
-   - Ask if the user needs specific host folders bound (e.g., `~/Documents`, `~/Downloads`, or a custom `WINEPREFIX`), and whether `/etc` should use standard `compat` mode (default) or hardened `minimal` mode (`--etc-mode minimal`).
+5. **Additional Shared Host Directories (`--bind` / `--ro-bind` with `SRC[:DEST]`) & `/etc` Hardening (Optional)**:
+   - Ask if the user needs specific host folders bound (e.g., `--bind ~/Documents:/workspace` or `--ro-bind ~/Downloads:/downloads`), and whether `/etc` should use standard `compat` mode (default) or hardened `minimal` mode (`--etc-mode minimal`).
 
 ### Step 3: Generate the Sandbox Script
-Run `scripts/generate.py` with the classified presets and user-selected policies (use `--app-id auto` and omit `--target` for generic reusable launchers):
+Run `scripts/generate.py` with the classified presets, user-selected policies, and any custom binds:
 ```bash
-python3 /home/tale/workspace/playground/.agents/skills/bwrap-sandbox-generator/scripts/generate.py \
+python3 <skill-dir>/scripts/generate.py \
   --app-id "<auto-or-app-name>" \
   --runtime "<runtime-id>" \
   --category "<category-id>" \
   --home-mode "<isolated|cwd|app-dir|custom|ephemeral>" \
   --cwd-mode "<none|ro|rw>" \
   --app-dir-mode "<ro|rw|none>" \
+  --bind "<HOST_PATH[:SANDBOX_PATH]>" \
+  --ro-bind "<HOST_PATH[:SANDBOX_PATH]>" \
   -o "<output-script-path>" \
   --report "<output-briefing-path.md>"
 ```
@@ -114,17 +116,17 @@ Never run `probe.py` before testing the static preset script first.
 
 - **Path 5A — Automatic Trigger (Immediate Crash / Non-Zero Exit / Missing Library or Path)**:
   ```bash
-  python3 /home/tale/workspace/playground/.agents/skills/bwrap-sandbox-generator/scripts/probe.py \
+  python3 <skill-dir>/scripts/probe.py \
     ldd-nonstd "<target-binary>"
   <output-script-path> --trace /tmp/<app-name>.strace <app-args...>
-  python3 /home/tale/workspace/playground/.agents/skills/bwrap-sandbox-generator/scripts/probe.py \
+  python3 <skill-dir>/scripts/probe.py \
     trace-analyze /tmp/<app-name>.strace
   ```
 - **Path 5B — User-Feedback Trigger (Silent GUI Failure / Interactive Feature Broken)**:
   Instruct the user to reproduce the issue using `--trace`, then parse the trace log:
   ```bash
   <output-script-path> --trace /tmp/<app-name>.strace <app-args...>
-  python3 /home/tale/workspace/playground/.agents/skills/bwrap-sandbox-generator/scripts/probe.py \
+  python3 <skill-dir>/scripts/probe.py \
     trace-analyze /tmp/<app-name>.strace
   ```
 - **Path 5C — Mandatory User Review & Approval Gate (CRITICAL SECURITY RULE)**:

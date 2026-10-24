@@ -59,22 +59,20 @@ MANDATORY LOCALIZATION & FILE-WRITING RULE FOR THE AGENT:
 - **[Localized: Checks Passed]**: {{AUDIT_CHECKS_PASSED_LIST}}
 {{AUDIT_WARNINGS_LOCALIZED}}
 
-### [Localized: Quick Runtime Override Flags]
+### [Localized: Quick Runtime Usage & Override Flags]
 ```bash
 # [Localized: Run normally with configured default policies]
 {{OUTPUT_SCRIPT}} [app_args...]
 
-# [Localized: Override network access at runtime]
-{{OUTPUT_SCRIPT}} --net [app_args...]
-{{OUTPUT_SCRIPT}} --no-net [app_args...]
-
-# [Localized: Override sandbox $HOME mapping mode at runtime]
-{{OUTPUT_SCRIPT}} --home-mode isolated [app_args...]   # ~/.local/share/bwrap-sandbox/{{APP_ID}}
-{{OUTPUT_SCRIPT}} --home-cwd [app_args...]             # [Localized: Map sandbox $HOME to $PWD]
-{{OUTPUT_SCRIPT}} --home-app-dir [app_args...]         # [Localized: Map sandbox $HOME to <app_dir>/.sandbox-home]
-{{OUTPUT_SCRIPT}} --home /path/to/dir [app_args...]    # [Localized: Map sandbox $HOME to custom directory]
-{{OUTPUT_SCRIPT}} --ephemeral [app_args...]            # [Localized: Unmapped in-memory tmpfs $HOME, wiped on exit]
+# [Localized: Specify custom application ID to switch isolated persistent $HOME]
+{{OUTPUT_SCRIPT}} -i <custom-id> [app_args...]
 
 # [Localized: Record strace log inside sandbox for fallback debugging]
 {{OUTPUT_SCRIPT}} --trace /tmp/{{APP_ID}}_trace.log [app_args...]
+
+# [Localized: View assembled bwrap command before execution]
+{{OUTPUT_SCRIPT}} -v [app_args...]
+
+# [Localized: Extra mounts can be directly edited in the script header (RW_BINDS / RO_BINDS) or passed via environment variables]
+EXTRA_RW_BINDS="/host/path:/sandbox/path" {{OUTPUT_SCRIPT}} [app_args...]
 ```
