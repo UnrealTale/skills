@@ -24,13 +24,13 @@ bwrap_parse_cli_args() {
   CUSTOM_APP_ID=""
   TRACE_LOG=""
   VERBOSE="${VERBOSE:-false}"
-  REMAINING_ARGS=()
+  declare -g -a REMAINING_ARGS=()
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -i|--id)
         if [[ $# -lt 2 ]]; then
-          echo "Error: -i/--id requires an argument." >&2
+          printf "Error: -i/--id requires an argument.\n" >&2
           usage_sandbox 1
         fi
         CUSTOM_APP_ID="$2"
@@ -38,7 +38,7 @@ bwrap_parse_cli_args() {
         ;;
       --trace)
         if [[ $# -lt 2 ]]; then
-          echo "Error: --trace requires a log file path." >&2
+          printf "Error: --trace requires a log file path.\n" >&2
           usage_sandbox 1
         fi
         TRACE_LOG="$2"
@@ -68,16 +68,17 @@ bwrap_parse_cli_args() {
     if [[ ${#DEFAULT_TARGET_CMD[@]} -gt 0 ]]; then
       REMAINING_ARGS=("${DEFAULT_TARGET_CMD[@]}")
     else
-      echo "Error: No target program or command provided." >&2
+      printf "Error: No target program or command provided.\n" >&2
       usage_sandbox 1
     fi
   elif [[ ${#DEFAULT_TARGET_CMD[@]} -gt 0 ]]; then
     local first_arg="${REMAINING_ARGS[0]}"
+    local exp_first_arg="${first_arg/#\~/$HOME}"
     local is_executable=false
 
     # Arguments starting with '-' are option flags, never a new executable command
     if [[ "$first_arg" != -* ]]; then
-      if [[ ( -x "$first_arg" || -L "$first_arg" ) && ! -d "$first_arg" ]]; then
+      if [[ ( -x "$exp_first_arg" || -L "$exp_first_arg" ) && ! -d "$exp_first_arg" ]]; then
         is_executable=true
       elif [[ "$first_arg" != *"/"* ]] && command -v -- "$first_arg" >/dev/null 2>&1; then
         is_executable=true

@@ -103,22 +103,28 @@ bwrap_apply_custom_mounts() {
   # 4. External environment variable overrides (space or comma separated)
   local extra_rw="${EXTRA_RW_BINDS:-${BWRAP_BINDS:-}}"
   if [[ -n "$extra_rw" ]]; then
-    for spec in ${extra_rw//,/ }; do
-      bwrap_mount_spec "bind" "$spec"
+    local -a extra_rw_specs=()
+    IFS=',' read -ra extra_rw_specs <<< "$extra_rw"
+    for spec in "${extra_rw_specs[@]}"; do
+      [[ -n "$spec" ]] && bwrap_mount_spec "bind" "$spec"
     done
   fi
 
   local extra_ro="${EXTRA_RO_BINDS:-${BWRAP_RO_BINDS:-}}"
   if [[ -n "$extra_ro" ]]; then
-    for spec in ${extra_ro//,/ }; do
-      bwrap_mount_spec "ro-bind" "$spec"
+    local -a extra_ro_specs=()
+    IFS=',' read -ra extra_ro_specs <<< "$extra_ro"
+    for spec in "${extra_ro_specs[@]}"; do
+      [[ -n "$spec" ]] && bwrap_mount_spec "ro-bind" "$spec"
     done
   fi
 
   local extra_dev="${EXTRA_DEV_BINDS:-${BWRAP_DEV_BINDS:-}}"
   if [[ -n "$extra_dev" ]]; then
-    for spec in ${extra_dev//,/ }; do
-      bwrap_mount_spec "dev-bind" "$spec"
+    local -a extra_dev_specs=()
+    IFS=',' read -ra extra_dev_specs <<< "$extra_dev"
+    for spec in "${extra_dev_specs[@]}"; do
+      [[ -n "$spec" ]] && bwrap_mount_spec "dev-bind" "$spec"
     done
   fi
 }
@@ -132,14 +138,21 @@ bwrap_apply_custom_mounts() {
 #   6. Configures container working directory and mounts CWD (CWD_MODE)
 bwrap_init_app_context() {
   local app_target="${1:-}"
+  app_target="${app_target/#\~/$HOME}"
 
   # 1. Resolve canonical executable/file path
   local app_exe=""
   if [[ -n "$app_target" ]]; then
     if [[ -e "$app_target" || -L "$app_target" ]]; then
       app_exe="$(realpath -s "$app_target")"
-    elif [[ "$app_target" != -* ]] && command -v -- "$app_target" >/dev/null 2>&1; then
-      app_exe="$(realpath "$(command -v -- "$app_target")")"
+    elif [[ "$app_target" != -* ]]; then
+      local bin_path
+      bin_path="$(type -P -- "$app_target" 2>/dev/null || true)"
+      if [[ -n "$bin_path" ]]; then
+        app_exe="$(realpath "$bin_path")"
+      else
+        app_exe="$app_target"
+      fi
     else
       app_exe="$app_target"
     fi
@@ -199,7 +212,7 @@ bwrap_init_app_context() {
       sandbox_home="${CUSTOM_HOME:-}"
       sandbox_home="${sandbox_home/#\~/$HOME}"
       if [[ -z "$sandbox_home" ]]; then
-        echo "Error: CUSTOM_HOME is empty." >&2
+        printf "Error: CUSTOM_HOME is empty.\n" >&2
         exit 1
       fi
       ;;
@@ -256,9 +269,12 @@ bwrap_exec() {
   # Support interactive fallback tracing via --trace <FILE>
   if [[ -n "${TRACE_LOG:-}" ]]; then
     if ! command -v strace >/dev/null 2>&1; then
-      echo "Error: --trace requires 'strace' to be installed on the system." >&2
+      printf "Error: --trace requires 'strace' to be installed on the system.\n" >&2
       exit 1
     fi
+    local trace_dir
+    trace_dir="$(dirname "$TRACE_LOG")"
+    [[ -n "$trace_dir" && "$trace_dir" != "." ]] && mkdir -p "$trace_dir" 2>/dev/null || true
     touch "$TRACE_LOG"
     local real_trace
     real_trace="$(realpath "$TRACE_LOG")"
@@ -268,9 +284,9 @@ bwrap_exec() {
 
   if [[ "${_BWRAP_IS_NESTED:-false}" == "true" ]]; then
     if [[ "$VERBOSE" == "true" ]]; then
-      echo ">>> [bwrap-sandbox] Already running inside a sandbox; skipping nested bwrap and executing directly:" >&2
+      printf ">>> [bwrap-sandbox] Already running inside a sandbox; skipping nested bwrap and executing directly:\n" >&2
       printf '%q ' "${exec_target[@]}" >&2
-      echo >&2
+      printf '\n' >&2
     fi
     exec "${exec_target[@]}"
   fi
@@ -278,9 +294,9 @@ bwrap_exec() {
   BWRAP_CMD+=(--setenv _BWRAP_SANDBOX_ACTIVE 1)
 
   if [[ "$VERBOSE" == "true" ]]; then
-    echo ">>> [bwrap-sandbox] Executing sandboxed command:" >&2
+    printf ">>> [bwrap-sandbox] Executing sandboxed command:\n" >&2
     printf '%q ' "${BWRAP_CMD[@]}" "${exec_target[@]}" >&2
-    echo >&2
+    printf '\n' >&2
   fi
 
   exec "${BWRAP_CMD[@]}" "${exec_target[@]}"

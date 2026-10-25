@@ -7,8 +7,8 @@
 # creates required parent/destination directory inside sandbox via --dir,
 # gracefully skips non-existent source paths, and mounts to sandbox.
 bwrap_mount_spec() {
-  local mode="$1" # bind | ro-bind | dev-bind
-  local spec="$2"
+  local -r mode="${1:-}" # bind | ro-bind | dev-bind
+  local -r spec="${2:-}"
   local src="" dst=""
 
   [[ -z "$spec" ]] && return 0
@@ -27,7 +27,7 @@ bwrap_mount_spec() {
 
   # Graceful degradation if source path does not exist on host (supports symlinks intended for container resolution)
   if [[ ! -e "$src" && ! -L "$src" ]]; then
-    echo "[bwrap-sandbox] Warning: Mount source '${src}' does not exist on host; skipping." >&2
+    printf "[bwrap-sandbox] Warning: Mount source '%s' does not exist on host; skipping.\n" "$src" >&2
     return 0
   fi
 
@@ -51,35 +51,35 @@ bwrap_mount_spec() {
       BWRAP_CMD+=(--dev-bind-try "$src" "$dst")
       ;;
     *)
-      echo "Error: Unknown mount mode '$mode' in bwrap_mount_spec." >&2
+      printf "Error: Unknown mount mode '%s' in bwrap_mount_spec.\n" "$mode" >&2
       return 1
       ;;
   esac
 }
 
 bwrap_bind() {
-  local src="$1"
-  local dst="${2:-$1}"
+  local src="${1:-}"
+  local dst="${2:-${1:-}}"
   BWRAP_CMD+=(--bind "$src" "$dst")
 }
 
 bwrap_ro_bind() {
-  local src="$1"
-  local dst="${2:-$1}"
+  local src="${1:-}"
+  local dst="${2:-${1:-}}"
   BWRAP_CMD+=(--ro-bind "$src" "$dst")
 }
 
 bwrap_bind_try() {
-  local src="$1"
-  local dst="${2:-$1}"
+  local src="${1:-}"
+  local dst="${2:-${1:-}}"
   if [[ -e "$src" || -L "$src" ]]; then
     BWRAP_CMD+=(--bind-try "$src" "$dst")
   fi
 }
 
 bwrap_ro_bind_try() {
-  local src="$1"
-  local dst="${2:-$1}"
+  local src="${1:-}"
+  local dst="${2:-${1:-}}"
   if [[ -e "$src" || -L "$src" ]]; then
     # When masking a file with /dev/null (e.g. /etc/shadow), only mount if target exists
     if [[ "$src" == "/dev/null" && ! -e "$dst" ]]; then
@@ -90,15 +90,15 @@ bwrap_ro_bind_try() {
 }
 
 bwrap_dev_bind_try() {
-  local src="$1"
-  local dst="${2:-$1}"
+  local src="${1:-}"
+  local dst="${2:-${1:-}}"
   if [[ -e "$src" || -L "$src" ]]; then
     BWRAP_CMD+=(--dev-bind-try "$src" "$dst")
   fi
 }
 
 bwrap_setenv() {
-  local key="$1"
-  local val="$2"
+  local key="${1:-}"
+  local val="${2:-}"
   BWRAP_CMD+=(--setenv "$key" "$val")
 }

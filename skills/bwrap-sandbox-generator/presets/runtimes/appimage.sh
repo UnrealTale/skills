@@ -4,7 +4,7 @@
 
 bwrap_configure_runtime() {
   if [[ $# -eq 0 ]]; then
-    echo "Error: No AppImage file provided." >&2
+    printf "Error: No AppImage file provided.\n" >&2
     return 1
   fi
 

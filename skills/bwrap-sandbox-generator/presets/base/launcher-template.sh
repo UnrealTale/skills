@@ -6,7 +6,7 @@
 # Capabilities     : {{CAPABILITIES_STR}}
 # Policies         : home={{HOME_MODE}}, cwd={{CWD_MODE}}, app_dir={{APP_DIR_MODE}}, net={{ALLOW_NET}}, etc={{ETC_MODE}}
 # ==============================================================================
-set -euo pipefail
+set -Eeuo pipefail
 OPEN_FILES_LIMIT={{OPEN_FILES_LIMIT}}
 ulimit -n "$OPEN_FILES_LIMIT" 2>/dev/null || true
 
@@ -34,15 +34,15 @@ NEW_SESSION={{NEW_SESSION}}
 VERBOSE=false
 
 # Custom Mounts: "HOST_PATH[:CONTAINER_PATH]" (Omit container path for same-name mount)
-RW_BINDS=(
+declare -a RW_BINDS=(
 {{RW_BINDS}}
 )
 
-RO_BINDS=(
+declare -a RO_BINDS=(
 {{RO_BINDS}}
 )
 
-DEV_BINDS=(
+declare -a DEV_BINDS=(
 {{DEV_BINDS}}
 )
 

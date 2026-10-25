@@ -4,6 +4,7 @@
 bwrap_setup_optical_storage() {
   [[ "${ENABLE_OPTICAL:-true}" != "true" ]] && return 0
 
+  local node
   for node in /dev/sr* /dev/sg*; do
     [[ -e "$node" ]] && bwrap_dev_bind_try "$node" "$node"
   done

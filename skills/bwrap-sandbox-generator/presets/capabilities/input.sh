@@ -7,6 +7,7 @@ bwrap_setup_input() {
   bwrap_dev_bind_try /dev/input /dev/input
   bwrap_dev_bind_try /dev/uinput /dev/uinput
   bwrap_dev_bind_try /dev/hidraw /dev/hidraw
+  local hid_node
   for hid_node in /dev/hidraw*; do
     [[ -e "$hid_node" ]] && bwrap_dev_bind_try "$hid_node" "$hid_node"
   done

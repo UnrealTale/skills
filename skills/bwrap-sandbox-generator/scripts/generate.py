@@ -42,8 +42,13 @@ def read_preset(rel_path: str) -> str:
     return (SKILL_ROOT / rel_path).read_text(encoding="utf-8").rstrip()
 
 
+def escape_bash_string(s: str) -> str:
+    """Escapes backslashes, double quotes, dollar signs, and backticks for double-quoted bash strings."""
+    return s.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$").replace("`", "\\`")
+
+
 def format_array(items: Optional[List[str]], example: str) -> str:
-    return "\n".join(f'  "{x}"' for x in items) if items else f'  # "{example}"'
+    return "\n".join(f'  "{escape_bash_string(x)}"' for x in items) if items else f'  # "{example}"'
 
 
 def resolve_config(cfg: Dict[str, Any], catalog: Dict[str, Any]) -> Dict[str, Any]:
@@ -111,24 +116,24 @@ def assemble_script(catalog: Dict[str, Any], **kwargs: Any) -> str:
     cat_meta = cats_cfg[cfg["category"]]
     caps = cfg["capabilities"]
 
-    target_cmd = f'DEFAULT_TARGET_CMD=({" ".join(f"\"{a}\"" for a in cfg["target"])})' if cfg["target"] else "DEFAULT_TARGET_CMD=()"
+    target_cmd = f'DEFAULT_TARGET_CMD=({" ".join(f"\"{escape_bash_string(a)}\"" for a in cfg["target"])})' if cfg["target"] else "DEFAULT_TARGET_CMD=()"
     wine_block = f'\n# Wine Environment Configuration\nWINE_PREFIX="{cfg.get("wine_prefix", "")}"\n' if cfg["runtime"] == "wine" else ""
 
     cap_presets = [read_preset(caps_cfg[c]["file"]) for c in caps if c != "network"]
     cap_calls = [caps_cfg["network"]["function"]] + [caps_cfg[c]["function"] for c in caps if c != "network"]
 
     # Extra primitives formatting
-    extra_lines = [f'BWRAP_CMD+=(--tmpfs "{p}")' for p in cfg.get("tmpfs_dirs", [])]
-    extra_lines += [f'BWRAP_CMD+=(--dir "{p}")' for p in cfg.get("empty_dirs", [])]
+    extra_lines = [f'BWRAP_CMD+=(--tmpfs "{escape_bash_string(p)}")' for p in cfg.get("tmpfs_dirs", [])]
+    extra_lines += [f'BWRAP_CMD+=(--dir "{escape_bash_string(p)}")' for p in cfg.get("empty_dirs", [])]
     for s in cfg.get("symlinks", []):
         src, dst = s if isinstance(s, (list, tuple)) else s.split(":", 1)
-        extra_lines.append(f'BWRAP_CMD+=(--symlink "{src}" "{dst}")')
+        extra_lines.append(f'BWRAP_CMD+=(--symlink "{escape_bash_string(src)}" "{escape_bash_string(dst)}")')
     for k, v in cfg.get("env", {}).items():
-        extra_lines.append(f'bwrap_setenv "{k}" "{v}"')
+        extra_lines.append(f'bwrap_setenv "{escape_bash_string(k)}" "{escape_bash_string(v)}"')
     for u in cfg.get("unsetenv", []):
-        extra_lines.append(f'BWRAP_CMD+=(--unsetenv "{u}")')
+        extra_lines.append(f'BWRAP_CMD+=(--unsetenv "{escape_bash_string(u)}")')
     for arg in cfg.get("bwrap_args", []):
-        tokens = " ".join(f'"{t}"' for t in arg.split())
+        tokens = " ".join(f'"{escape_bash_string(t)}"' for t in arg.split())
         if tokens:
             extra_lines.append(f"BWRAP_CMD+=({tokens})")
     extra_block = ("# Application-specific extra mounts, primitives, and environment variables\n" + "\n".join(extra_lines)) if extra_lines else ""

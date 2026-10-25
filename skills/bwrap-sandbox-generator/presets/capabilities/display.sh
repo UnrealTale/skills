@@ -4,8 +4,9 @@
 bwrap_setup_display() {
   [[ "${ENABLE_DISPLAY:-true}" != "true" ]] && return 0
 
-  if [[ -n "${WAYLAND_DISPLAY:-}" && -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/${WAYLAND_DISPLAY}" ]]; then
-    bwrap_bind "${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}" "${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}"
+  local xdg_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+  if [[ -n "${WAYLAND_DISPLAY:-}" && -S "${xdg_dir}/${WAYLAND_DISPLAY}" ]]; then
+    bwrap_bind "${xdg_dir}/${WAYLAND_DISPLAY}" "${xdg_dir}/${WAYLAND_DISPLAY}"
     bwrap_setenv WAYLAND_DISPLAY "$WAYLAND_DISPLAY"
   fi
 

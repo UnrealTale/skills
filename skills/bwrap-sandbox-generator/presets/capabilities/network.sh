@@ -2,7 +2,7 @@
 # Capability Preset [network]: Network Namespace, DNS Resolution & Cross-Distro CA Certificates
 # ==============================================================================
 bwrap_setup_network() {
-  if [[ "$ALLOW_NET" == "true" ]]; then
+  if [[ "${ALLOW_NET:-false}" == "true" ]]; then
     BWRAP_CMD+=(--share-net)
     bwrap_ro_bind_try /run/systemd/resolve /run/systemd/resolve
     bwrap_ro_bind_try /run/NetworkManager /run/NetworkManager

@@ -5,6 +5,7 @@ bwrap_setup_usb_serial() {
   [[ "${ENABLE_USB_SERIAL:-true}" != "true" ]] && return 0
 
   bwrap_dev_bind_try /dev/bus/usb /dev/bus/usb
+  local node
   for node in /dev/ttyUSB* /dev/ttyACM* /dev/hidraw*; do
     [[ -e "$node" ]] && bwrap_dev_bind_try "$node" "$node"
   done

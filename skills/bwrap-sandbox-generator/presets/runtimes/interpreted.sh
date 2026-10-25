@@ -4,7 +4,7 @@
 
 bwrap_configure_runtime() {
   if [[ $# -eq 0 ]]; then
-    echo "Error: No interpreter or script command provided." >&2
+    printf "Error: No interpreter or script command provided.\n" >&2
     return 1
   fi
 
@@ -17,9 +17,11 @@ bwrap_configure_runtime() {
       [[ $# -ge 2 && -e "$2" ]] && real_script_file="$2"
       ;;
     java)
+      local -i i=0
+      local -i next_idx=0
       for ((i=2; i<=$#; i++)); do
         if [[ "${!i}" == "-jar" ]]; then
-          local next_idx=$((i+1))
+          next_idx=$((i+1))
           if [[ $next_idx -le $# && -f "${!next_idx}" ]]; then
             real_script_file="${!next_idx}"
             break
